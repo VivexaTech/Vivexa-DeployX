@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+import { join } from "node:path";
 import type { App } from "firebase-admin/app";
 import type { Auth } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
@@ -14,20 +16,17 @@ let adminApp: App | null = null;
 
 function loadAdminSdk() {
   try {
-    // Runtime require so Vercel can resolve node_modules/firebase-admin.
-    // Static ESM imports are rewritten by Turbopack to hashed paths that
-    // are often missing from serverless traces (empty HTTP 500).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const app = require("firebase-admin/app") as typeof import("firebase-admin/app");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const auth = require("firebase-admin/auth") as typeof import("firebase-admin/auth");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const firestore = require("firebase-admin/firestore") as typeof import("firebase-admin/firestore");
-    return { app, auth, firestore };
+    const fromProjectRoot = createRequire(join(process.cwd(), "package.json"));
+    return {
+      app: fromProjectRoot("firebase-admin/app") as typeof import("firebase-admin/app"),
+      auth: fromProjectRoot("firebase-admin/auth") as typeof import("firebase-admin/auth"),
+      firestore: fromProjectRoot("firebase-admin/firestore") as typeof import("firebase-admin/firestore"),
+    };
   } catch (error) {
     logger.error("firebase-admin module failed to load", {
       name: error instanceof Error ? error.name : "unknown",
       message: error instanceof Error ? error.message : "unknown",
+      node: process.versions.node,
     });
     throw new AppError(
       "FIREBASE_ERROR",
@@ -104,12 +103,12 @@ export function getAdminApp() {
     });
     logger.info("Firebase Admin initialized", {
       projectId: getFirebaseAdminProjectId(),
+      node: process.versions.node,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown";
     logger.error("Firebase Admin failed to initialize", {
       name: error instanceof Error ? error.name : "unknown",
-      message,
+      message: error instanceof Error ? error.message : "unknown",
     });
     throw new AppError(
       "CONFIG_MISSING",

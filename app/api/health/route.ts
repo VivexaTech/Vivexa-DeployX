@@ -8,5 +8,6 @@ export async function GET() {
     ok: true,
     runtime: "nodejs",
     vercel: process.env.VERCEL === "1",
+    node: process.versions.node,
   });
 }

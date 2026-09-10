@@ -5,12 +5,16 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/**": [
       "./node_modules/firebase-admin/**/*",
-      "./node_modules/@google-cloud/firestore/**/*",
-      "./node_modules/@google-cloud/storage/**/*",
+      "./node_modules/@google-cloud/**/*",
+      "./node_modules/google-gax/**/*",
+      "./node_modules/google-auth-library/**/*",
+      "./node_modules/jsonwebtoken/**/*",
+      "./node_modules/jwks-rsa/**/*",
+      "./node_modules/node-forge/**/*",
     ],
     "/*": [
       "./node_modules/firebase-admin/**/*",
-      "./node_modules/@google-cloud/firestore/**/*",
+      "./node_modules/@google-cloud/**/*",
     ],
   },
   images: {
