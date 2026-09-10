@@ -2,8 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "@/config/constants";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { collections } from "@/lib/firebase/collections";
+import { verifyFirebaseIdToken } from "@/lib/auth/verify-id-token";
 import { readEnv } from "@/lib/env.server";
 import { logger } from "@/lib/logger";
 import { nowIso } from "@/lib/utils";
@@ -43,8 +42,8 @@ function sessionSecret() {
   return (
     readEnv("APP_ENCRYPTION_KEY") ||
     readEnv("CRON_SECRET") ||
-    readEnv("FIREBASE_ADMIN_PRIVATE_KEY") ||
-    readEnv("FIREBASE_PRIVATE_KEY") ||
+    readEnv("SESSION_SECRET") ||
+    [process.env.VERCEL_PROJECT_ID, process.env.NEXT_PUBLIC_FIREBASE_APP_ID].filter(Boolean).join(":") ||
     "deployx-dev"
   );
 }
@@ -85,26 +84,9 @@ function parseAppSessionToken(token: string): SessionUser | null {
 
 export async function createSession(idToken: string) {
   logger.info("auth.session verifying google token");
-  const auth = getAdminAuth();
-  const decoded = await auth.verifyIdToken(idToken);
-  const sessionUser: SessionUser = {
-    uid: decoded.uid,
-    email: decoded.email ?? null,
-    name: decoded.name ?? null,
-    picture: decoded.picture ?? null,
-  };
-  logger.info("auth.session google token verified", { hasUid: Boolean(sessionUser.uid) });
-  let profile: UserProfile | null = null;
-  try {
-    profile = await upsertUserFromDecoded(decoded);
-    logger.info("auth.session firestore user upserted");
-  } catch (error) {
-    logger.error("auth.session firestore upsert failed", {
-      name: error instanceof Error ? error.name : "unknown",
-      message: error instanceof Error ? error.message : "unknown",
-    });
-  }
-  return { decoded, sessionCookie: createAppSessionToken(sessionUser), profile };
+  const decoded = await verifyFirebaseIdToken(idToken);
+  logger.info("auth.session google token verified", { hasUid: Boolean(decoded.uid) });
+  return { decoded, sessionCookie: createAppSessionToken(decoded) };
 }
 
 export function applySessionCookie(response: NextResponse, sessionCookie: string, request?: Request) {
@@ -129,19 +111,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
-  const appSession = parseAppSessionToken(token);
-  if (appSession) return appSession;
-  try {
-    const decoded = await getAdminAuth().verifySessionCookie(token, true);
-    return {
-      uid: decoded.uid,
-      email: decoded.email ?? null,
-      name: decoded.name ?? null,
-      picture: decoded.picture ?? null,
-    };
-  } catch {
-    return null;
-  }
+  return parseAppSessionToken(token);
 }
 
 export async function requireSessionUser() {
@@ -155,17 +125,13 @@ export async function requireSessionUser() {
 export async function verifyRequestUser(request: Request) {
   const header = request.headers.get("authorization");
   if (header?.startsWith("Bearer ")) {
-    const token = header.slice(7);
-    try {
-      const decoded = await getAdminAuth().verifyIdToken(token);
-      return {
-        uid: decoded.uid,
-        email: decoded.email ?? null,
-        name: decoded.name ?? null,
-        picture: decoded.picture ?? null,
-      } satisfies SessionUser;
-    } catch {
-      throw new AppError("UNAUTHENTICATED", "Your session has expired. Please sign in again.", 401);
+    const token = header.slice(7).trim();
+    if (token.length >= 20) {
+      try {
+        return await verifyFirebaseIdToken(token);
+      } catch {
+        // Fall through to the host-only session cookie.
+      }
     }
   }
   const user = await getSessionUser();
@@ -175,47 +141,23 @@ export async function verifyRequestUser(request: Request) {
   return user;
 }
 
-type DecodedLike = {
-  uid: string;
-  email?: string | null;
-  name?: string | null;
-  picture?: string | null;
-};
-
-export async function upsertUserFromDecoded(decoded: DecodedLike) {
-  const db = getAdminDb();
-  const ref = db.collection(collections.users).doc(decoded.uid);
-  const snap = await ref.get();
+export function profileFromSession(session: SessionUser): UserProfile {
   const timestamp = nowIso();
-  if (!snap.exists) {
-    const profile: UserProfile = {
-      uid: decoded.uid,
-      name: decoded.name ?? "Vivexa user",
-      email: decoded.email ?? "",
-      photoURL: decoded.picture ?? null,
-      activePlanId: null,
-      activePlanName: null,
-      subscriptionId: null,
-      subscriptionStatus: "none" satisfies SubscriptionStatus,
-      subscriptionStartDate: null,
-      renewalDate: null,
-      websiteLimit: 0,
-      websiteCount: 0,
-      gracePeriodDays: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    await ref.set(profile);
-    return profile;
-  }
-  await ref.set(
-    {
-      name: decoded.name ?? snap.data()?.name ?? "Vivexa user",
-      email: decoded.email ?? snap.data()?.email ?? "",
-      photoURL: decoded.picture ?? snap.data()?.photoURL ?? null,
-      updatedAt: timestamp,
-    },
-    { merge: true },
-  );
-  return { uid: decoded.uid, ...(snap.data() ?? {}), updatedAt: timestamp } as UserProfile;
+  return {
+    uid: session.uid,
+    name: session.name ?? "Vivexa user",
+    email: session.email ?? "",
+    photoURL: session.picture ?? null,
+    activePlanId: null,
+    activePlanName: null,
+    subscriptionId: null,
+    subscriptionStatus: "none" satisfies SubscriptionStatus,
+    subscriptionStartDate: null,
+    renewalDate: null,
+    websiteLimit: 0,
+    websiteCount: 0,
+    gracePeriodDays: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 }

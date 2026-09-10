@@ -1,7 +1,6 @@
 import { applySessionCookie, createSession } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { enforceRateLimit } from "@/lib/rate-limit";
 import { handleRouteError, json, readJson } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -29,7 +28,6 @@ export async function POST(request: Request) {
       hasEmail: Boolean(decoded.email),
       sessionChars: sessionCookie.length,
     });
-    await enforceRateLimit(decoded.uid, "auth").catch(() => undefined);
     const response = json({ ok: true, uid: decoded.uid, email: decoded.email ?? null });
     return applySessionCookie(response, sessionCookie, request);
   } catch (error) {

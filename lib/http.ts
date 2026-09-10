@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { AppError, toPublicError } from "@/lib/errors";
+import { AppError, isAppError, toPublicError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export function json<T>(data: T, status = 200) {
@@ -8,7 +8,7 @@ export function json<T>(data: T, status = 200) {
 }
 
 function mapUnknownError(error: unknown) {
-  if (error instanceof AppError) return error;
+  if (isAppError(error)) return error;
   if (error instanceof ZodError) {
     return new AppError("VALIDATION", error.issues[0]?.message || "Invalid input.", 400);
   }

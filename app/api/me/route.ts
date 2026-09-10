@@ -1,10 +1,11 @@
-import { upsertUserFromDecoded, verifyRequestUser } from "@/lib/auth/session";
+import { profileFromSession, verifyRequestUser } from "@/lib/auth/session";
+import { upsertUserFromDecoded } from "@/lib/auth/user";
 import { getCurrentUsage, getUserPlan, getUserProfile, isSubscriptionEligible } from "@/lib/entitlements";
 import { getGithubConnection } from "@/lib/github/client";
 import { handleRouteError, json } from "@/lib/http";
 import { logger } from "@/lib/logger";
 import { listRecentDeployments, listUserProjects } from "@/lib/projects/service";
-import { AppError } from "@/lib/errors";
+import { isAppError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,14 +19,18 @@ export async function GET(request: Request) {
       usedBearer: Boolean(request.headers.get("authorization")?.startsWith("Bearer ")),
     });
     const user = await getUserProfile(session.uid).catch(async (error) => {
-      if (error instanceof AppError && error.code === "NOT_FOUND") {
-        return upsertUserFromDecoded(session);
+      try {
+        if (!isAppError(error) || error.code === "NOT_FOUND" || error.code === "CONFIG_MISSING" || error.code === "FIREBASE_ERROR") {
+          return await upsertUserFromDecoded(session);
+        }
+        throw error;
+      } catch {
+        return profileFromSession(session);
       }
-      throw error;
     });
     const [plan, usage, github, projects, deployments] = await Promise.all([
-      getUserPlan(user),
-      getCurrentUsage(session.uid),
+      getUserPlan(user).catch(() => null),
+      getCurrentUsage(session.uid).catch(() => 0),
       getGithubConnection(session.uid).catch(() => null),
       listUserProjects(session.uid).catch(() => []),
       listRecentDeployments(session.uid, 30).catch(() => []),
