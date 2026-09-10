@@ -8,6 +8,7 @@ export const collections = {
   subscriptions: "subscriptions",
   payments: "payments",
   webhookEvents: "webhookEvents",
+  renewalReminders: "renewalReminders",
   githubConnections: "githubConnections",
   rateLimits: "rateLimits",
   subdomainIndex: "subdomainIndex",

@@ -186,8 +186,8 @@ Users add a hostname in the dashboard. DNS records (A / CNAME) come from the Ver
 1. Import this repository into Vercel.
 2. Set every variable from `.env.example` (except comments).
 3. Production URL example: `https://deployx.vivexatech.in` → `APP_URL`.
-4. Cron is declared in `vercel.json`. Set `CRON_SECRET` and send it as `Authorization: Bearer CRON_SECRET`.
-5. Confirm Hobby/Pro limits: cron and function duration require a Vercel plan that supports them.
+4. Cron is declared in `vercel.json` with **daily** Hobby-safe schedules only (`0 0 * * *` for renewal reminders). Set `CRON_SECRET`. Vercel sends `Authorization: Bearer CRON_SECRET` automatically. Arbitrary callers are rejected.
+5. Renewal reminders run once per day, email subscribers whose renewal is 10 days away, and store `reminderSentForRenewal` + `reminderSentAt` so the same renewal date is never emailed twice. A changed renewal date starts a new reminder cycle.
 
 ## Admin
 

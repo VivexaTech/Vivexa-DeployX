@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "validate:cron": "node scripts/validate-vercel-cron.mjs",
     "seed": "npx tsx scripts/seed.ts"
   },
   "dependencies": {

@@ -52,6 +52,9 @@ service cloud.firestore {
     match /webhookEvents/{id} {
       allow read, write: if false;
     }
+    match /renewalReminders/{id} {
+      allow read, write: if false;
+    }
     match /githubConnections/{id} {
       allow read, write: if false;
     }

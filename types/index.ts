@@ -232,6 +232,7 @@ export type SubscriptionRecord = {
   amount: number;
   currency: string;
   reminderSentForRenewal: string | null;
+  reminderSentAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

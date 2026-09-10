@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     assertCronAccess(request);
-    const sent = await sendDueRenewalReminders();
-    return json({ ok: true, sent });
+    const result = await sendDueRenewalReminders();
+    return json({ ok: true, ...result });
   } catch (error) {
     return handleRouteError(error, "cron.renewal");
   }

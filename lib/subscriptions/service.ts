@@ -1,5 +1,7 @@
-import { addMonths, addYears } from "date-fns";
+import { addMonths, addYears, differenceInCalendarDays } from "date-fns";
 import { nanoid } from "nanoid";
+import { RENEWAL_REMINDER_DAYS } from "@/config/constants";
+import { utcDayKey, utcStartOfDay } from "@/lib/cron";
 import { getPlanById } from "@/lib/content/public";
 import { sendEmail } from "@/lib/email/resend";
 import {
@@ -13,6 +15,19 @@ import { createNotification } from "@/lib/notifications/create";
 import { logger } from "@/lib/logger";
 import { nowIso } from "@/lib/utils";
 import type { Invoice, SubscriptionStatus, UserProfile } from "@/types";
+
+const REMINDER_ELIGIBLE_STATUSES = new Set(["active", "authenticated"]);
+const REMINDER_INELIGIBLE_STATUSES = new Set([
+  "cancelled",
+  "canceled",
+  "expired",
+  "halted",
+  "completed",
+  "failed",
+  "paused",
+  "pending",
+  "none",
+]);
 
 function nextRenewal(billingCycle: "monthly" | "yearly", from = new Date()) {
   return (billingCycle === "yearly" ? addYears(from, 1) : addMonths(from, 1)).toISOString();
@@ -75,6 +90,7 @@ export async function applySubscriptionActivation(input: {
       amount,
       currency: plan?.currency ?? "INR",
       reminderSentForRenewal: null,
+      reminderSentAt: null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     },
@@ -215,48 +231,135 @@ export async function applySubscriptionStatus(
   }
 }
 
+function isReminderEligible(status: string) {
+  if (REMINDER_INELIGIBLE_STATUSES.has(status)) return false;
+  return REMINDER_ELIGIBLE_STATUSES.has(status);
+}
+
 export async function sendDueRenewalReminders() {
   const db = getAdminDb();
-  const target = new Date();
-  target.setUTCDate(target.getUTCDate() + 10);
-  const start = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate()));
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
+  const today = utcStartOfDay();
+  const windowStart = new Date(today);
+  windowStart.setUTCDate(windowStart.getUTCDate() + (RENEWAL_REMINDER_DAYS - 1));
+  const windowEnd = new Date(today);
+  windowEnd.setUTCDate(windowEnd.getUTCDate() + RENEWAL_REMINDER_DAYS + 1);
+
   const snap = await db
     .collection(collections.subscriptions)
-    .where("status", "==", "active")
-    .where("renewalDate", ">=", start.toISOString())
-    .where("renewalDate", "<", end.toISOString())
+    .where("renewalDate", ">=", windowStart.toISOString())
+    .where("renewalDate", "<", windowEnd.toISOString())
     .get();
 
   let sent = 0;
+  let skipped = 0;
+
   for (const doc of snap.docs) {
     const data = doc.data();
-    const marker = start.toISOString().slice(0, 10);
-    if (data.reminderSentForRenewal === marker) continue;
+    const status = String(data.status ?? "");
+    const renewalDate = String(data.renewalDate ?? "");
+    const renewalKey = utcDayKey(renewalDate);
+    if (!renewalKey) {
+      skipped += 1;
+      continue;
+    }
+    if (!isReminderEligible(status)) {
+      skipped += 1;
+      continue;
+    }
+
+    const daysUntil = differenceInCalendarDays(utcStartOfDay(new Date(renewalDate)), today);
+    if (daysUntil !== RENEWAL_REMINDER_DAYS && daysUntil !== RENEWAL_REMINDER_DAYS - 1) {
+      skipped += 1;
+      continue;
+    }
+
+    if (data.reminderSentForRenewal === renewalKey && data.reminderSentAt) {
+      skipped += 1;
+      continue;
+    }
+
     const userSnap = await db.collection(collections.users).doc(String(data.userId)).get();
     const user = userSnap.data() as UserProfile | undefined;
-    if (!user?.email) continue;
-    if (["cancelled", "expired", "completed", "halted"].includes(String(data.status))) continue;
+    if (!user?.email || !isReminderEligible(String(user.subscriptionStatus ?? ""))) {
+      skipped += 1;
+      continue;
+    }
+
+    const eventId = `${doc.id}_${renewalKey}`;
+    const eventRef = db.collection(collections.renewalReminders).doc(eventId);
+    const claimed = await db.runTransaction(async (tx) => {
+      const eventSnap = await tx.get(eventRef);
+      const event = eventSnap.data();
+      if (event?.status === "completed") return false;
+      if (event?.status === "processing") {
+        const claimedAt = event.claimedAt ? new Date(String(event.claimedAt)).getTime() : 0;
+        if (Date.now() - claimedAt < 30 * 60 * 1000) return false;
+      }
+      const subSnap = await tx.get(doc.ref);
+      const latest = subSnap.data();
+      if (!latest || !isReminderEligible(String(latest.status ?? ""))) return false;
+      const latestRenewalKey = utcDayKey(String(latest.renewalDate ?? ""));
+      if (latestRenewalKey !== renewalKey) return false;
+      if (latest.reminderSentForRenewal === renewalKey && latest.reminderSentAt) return false;
+      tx.set(
+        eventRef,
+        {
+          eventId,
+          subscriptionId: doc.id,
+          userId: data.userId,
+          renewalDate: renewalKey,
+          status: "processing",
+          claimedAt: nowIso(),
+        },
+        { merge: true },
+      );
+      return true;
+    });
+
+    if (!claimed) {
+      skipped += 1;
+      continue;
+    }
+
     const template = renewalReminderEmail({
       name: user.name,
       planName: user.activePlanName ?? "your plan",
       amount: Number(data.amount ?? 0),
       currency: String(data.currency ?? "INR"),
-      renewalDate: String(data.renewalDate),
+      renewalDate,
     });
     const result = await sendEmail({ to: user.email, ...template });
-    if (!result.failed) {
-      await doc.ref.set({ reminderSentForRenewal: marker, updatedAt: nowIso() }, { merge: true });
-      await createNotification({
-        uid: user.uid,
-        type: "renewal_reminder",
-        title: "Renewal in 10 days",
-        message: `Your ${user.activePlanName ?? "subscription"} renews on ${String(data.renewalDate).slice(0, 10)}.`,
-        href: "/dashboard/billing",
+    if (result.failed || result.skipped) {
+      await eventRef.set(
+        { status: result.failed ? "failed" : "unconfigured", failedAt: nowIso() },
+        { merge: true },
+      );
+      logger.warn("Renewal reminder not delivered; will retry on the next daily run", {
+        subscriptionId: doc.id,
+        reason: result.failed ? "email_failed" : "resend_unconfigured",
       });
-      sent += 1;
+      continue;
     }
+
+    const sentAt = nowIso();
+    await eventRef.set({ status: "completed", sentAt }, { merge: true });
+    await doc.ref.set(
+      {
+        reminderSentForRenewal: renewalKey,
+        reminderSentAt: sentAt,
+        updatedAt: sentAt,
+      },
+      { merge: true },
+    );
+    await createNotification({
+      uid: user.uid,
+      type: "renewal_reminder",
+      title: "Renewal in 10 days",
+      message: `Your ${user.activePlanName ?? "subscription"} renews on ${renewalKey}.`,
+      href: "/dashboard/billing",
+    });
+    sent += 1;
   }
-  return sent;
+
+  return { sent, skipped, reminderDays: RENEWAL_REMINDER_DAYS };
 }

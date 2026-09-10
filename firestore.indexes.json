@@ -61,6 +61,11 @@
     {
       "collectionGroup": "subscriptions",
       "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "renewalDate", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "renewalDate", "order": "ASCENDING" }
