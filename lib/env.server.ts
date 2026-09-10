@@ -1,3 +1,4 @@
+import { PRODUCTION_APP_URL } from "@/config/constants";
 import { AppError } from "@/lib/errors";
 
 function readProcessEnv(name: string) {
@@ -61,4 +62,73 @@ export function requireServerEnv(keys: string[]) {
   }
 }
 
-export { getAppUrl, getMainDomain, getRazorpayPublicKey } from "@/lib/env";
+export { getMainDomain, getRazorpayPublicKey } from "@/lib/env";
+
+function withProtocol(url: string) {
+  const trimmed = url.replace(/\/$/, "").trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(localhost|127\.0\.0\.1)/i.test(trimmed)) return `http://${trimmed}`;
+  return `https://${trimmed}`;
+}
+
+function hostnameOf(url: string) {
+  try {
+    return new URL(withProtocol(url)).hostname;
+  } catch {
+    return "";
+  }
+}
+
+function isLocalhostHost(host: string) {
+  const hostname = host.replace(/:\d+$/, "").toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function isUsableAppUrl(url: string) {
+  if (!url) return false;
+  const host = hostnameOf(url);
+  if (!host || isLocalhostHost(host)) return false;
+  if (host.endsWith(".vercel.app")) return false;
+  return true;
+}
+
+export function getAppUrl() {
+  const onVercel = readEnv("VERCEL") === "1";
+  const nodeEnv = readEnv("NODE_ENV") || process.env.NODE_ENV || "";
+  if (!onVercel && nodeEnv !== "production") {
+    const port = readEnv("PORT") || "3000";
+    return `http://localhost:${port}`;
+  }
+  const candidates = [readEnv("APP_URL"), readEnv("NEXT_PUBLIC_APP_URL")];
+  for (const raw of candidates) {
+    const url = withProtocol(raw);
+    if (isUsableAppUrl(url)) return url;
+  }
+  if (onVercel || nodeEnv === "production") return PRODUCTION_APP_URL;
+  return "http://localhost:3000";
+}
+
+export function getRequestOrigin(request: Request) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? "";
+  const hostHeader = request.headers.get("host")?.split(",")[0]?.trim() ?? "";
+  const host = forwardedHost || hostHeader;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "";
+  const isLocal = isLocalhostHost(host);
+
+  let proto = forwardedProto;
+  if (!proto) {
+    try {
+      proto = new URL(request.url).protocol.replace(":", "");
+    } catch {
+      proto = "";
+    }
+  }
+  if (isLocal) proto = "http";
+  else if (readEnv("VERCEL") === "1") proto = "https";
+  else if (!proto) proto = "https";
+
+  if (!host) return getAppUrl();
+  if (!isLocal && host.toLowerCase().endsWith(".vercel.app")) return getAppUrl();
+  return `${proto}://${host}`.replace(/\/$/, "");
+}

@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import {
+  getAppUrl,
   getFirebaseAdminClientEmail,
   getFirebaseAdminProjectId,
+  getRequestOrigin,
   isAdminSdkConfigured,
   readEnv,
 } from "@/lib/env.server";
 import { probeAdminSdk } from "@/lib/firebase/admin";
+import { GITHUB_CALLBACK_PATH } from "@/lib/github/oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const admin = isAdminSdkConfigured() ? probeAdminSdk() : { ready: false as const, code: "CONFIG_MISSING" };
+  const requestOrigin = getRequestOrigin(request);
   return NextResponse.json({
     ok: true,
     runtime: "nodejs",
@@ -31,6 +35,13 @@ export async function GET() {
       razorpayKeys: Boolean(readEnv("RAZORPAY_KEY_ID") && readEnv("RAZORPAY_KEY_SECRET")),
       razorpayWebhookSecret: Boolean(readEnv("RAZORPAY_WEBHOOK_SECRET")),
       resend: Boolean(readEnv("RESEND_API_KEY") && readEnv("RESEND_FROM_EMAIL")),
+    },
+    github: {
+      configured: Boolean(readEnv("GITHUB_CLIENT_ID") && readEnv("GITHUB_CLIENT_SECRET")),
+      callbackRoute: GITHUB_CALLBACK_PATH,
+      appUrl: getAppUrl(),
+      requestOrigin,
+      redirectUri: `${requestOrigin}${GITHUB_CALLBACK_PATH}`,
     },
   });
 }

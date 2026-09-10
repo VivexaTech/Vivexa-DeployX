@@ -1,5 +1,6 @@
 export const PLATFORM_NAME = "Vivexa DeployX";
 export const COMPANY_NAME = "Vivexa Tech";
+export const PRODUCTION_APP_URL = "https://deployx.vivexatech.in";
 
 export const DEFAULT_RESERVED_SUBDOMAINS = [
   "www",

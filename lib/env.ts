@@ -12,6 +12,18 @@ function withProtocol(url: string) {
   return `https://${trimmed}`;
 }
 
+function isUsableAppUrl(url: string) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname;
+    if (host === "localhost" || host === "127.0.0.1") return false;
+    if (host.endsWith(".vercel.app")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getPublicFirebaseConfig() {
   return {
     apiKey: publicEnv(process.env.NEXT_PUBLIC_FIREBASE_API_KEY),
@@ -29,15 +41,16 @@ export function isPublicFirebaseConfigured() {
 }
 
 export function getAppUrl() {
-  if (process.env.NODE_ENV !== "production") {
+  const onVercel = process.env.VERCEL === "1";
+  if (!onVercel && process.env.NODE_ENV !== "production") {
     const port = publicEnv(process.env.PORT) || "3000";
     return `http://localhost:${port}`;
   }
-  const raw =
-    publicEnv(process.env.APP_URL) ||
-    publicEnv(process.env.NEXT_PUBLIC_APP_URL) ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-  return withProtocol(raw);
+  const raw = publicEnv(process.env.APP_URL) || publicEnv(process.env.NEXT_PUBLIC_APP_URL);
+  const url = withProtocol(raw);
+  if (isUsableAppUrl(url)) return url;
+  if (onVercel || process.env.NODE_ENV === "production") return "https://deployx.vivexatech.in";
+  return url || "http://localhost:3000";
 }
 
 export function getMainDomain() {

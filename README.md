@@ -115,11 +115,16 @@ Users cannot write subscription, payment, Vercel, or invoice fields from the cli
 
 ## GitHub OAuth
 
-1. Create a GitHub OAuth App.
-2. Homepage URL: `APP_URL`
-3. Callback: `{APP_URL}/api/github/callback`
-4. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
-5. For automatic deploys, set `GITHUB_WEBHOOK_SECRET` and use `{APP_URL}/api/github/webhook`.
+Use a GitHub **OAuth App** (not a GitHub App). The app sends `redirect_uri` from the current request origin plus `/api/github/callback`.
+
+1. Create a GitHub OAuth App (Settings → Developer settings → OAuth Apps).
+2. Homepage URL: `https://deployx.vivexatech.in` (and `http://localhost:3000` for local).
+3. Authorization callback URL must include **both**:
+   - Local: `http://localhost:3000/api/github/callback`
+   - Production: `https://deployx.vivexatech.in/api/github/callback`
+4. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in local `.env` and in **Vercel → Production**.
+5. Set Production `APP_URL` / `NEXT_PUBLIC_APP_URL` to `https://deployx.vivexatech.in` (not localhost, not `*.vercel.app`).
+6. For automatic deploys, set `GITHUB_WEBHOOK_SECRET` and use `https://deployx.vivexatech.in/api/github/webhook`.
 
 The Vercel account that owns `VERCEL_TOKEN` must be able to deploy the selected GitHub repositories (connect GitHub on that Vercel team).
 
