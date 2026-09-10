@@ -25,6 +25,7 @@ export function sessionCookieOptions(secure = process.env.NODE_ENV === "producti
 }
 
 function cookieSecureFromRequest(request?: Request) {
+  if (process.env.VERCEL === "1") return true;
   if (!request) return process.env.NODE_ENV === "production";
   const forwarded = request.headers.get("x-forwarded-proto");
   if (forwarded) return forwarded.split(",")[0]?.trim() === "https";

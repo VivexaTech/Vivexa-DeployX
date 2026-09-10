@@ -6,6 +6,7 @@ import { listRecentDeployments, listUserProjects } from "@/lib/projects/service"
 import { AppError } from "@/lib/errors";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
