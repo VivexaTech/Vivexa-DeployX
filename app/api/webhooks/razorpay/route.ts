@@ -3,13 +3,13 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { collections } from "@/lib/firebase/collections";
 import { handleRouteError, json } from "@/lib/http";
 import { logger } from "@/lib/logger";
+import { getRazorpay } from "@/lib/razorpay/client";
 import { verifyRazorpayWebhook, type RazorpayWebhookEvent } from "@/lib/razorpay/webhooks";
 import {
   applyPaymentFailure,
   applySubscriptionActivation,
   applySubscriptionStatus,
   mapRazorpaySubscriptionStatus,
-  razorpayStatusIsPaid,
 } from "@/lib/subscriptions/service";
 import { nowIso } from "@/lib/utils";
 import type { SubscriptionStatus } from "@/types";
@@ -25,9 +25,52 @@ function notesOf(record: Record<string, unknown>) {
   return (record.notes as Record<string, string> | undefined) ?? {};
 }
 
-function eventKey(event: RazorpayWebhookEvent, payment: Record<string, unknown>, subscription: Record<string, unknown>) {
-  const id = typeof event.event === "string" ? event.event : "event";
-  return [id, String(payment.id ?? subscription.id ?? "none"), String(event.created_at ?? "")].join(":");
+function razorpayEventId(
+  event: RazorpayWebhookEvent,
+  request: Request,
+  payment: Record<string, unknown>,
+  subscription: Record<string, unknown>,
+) {
+  const header = request.headers.get("x-razorpay-event-id")?.trim();
+  if (header) return header;
+  if (typeof event.id === "string" && event.id.trim()) return event.id.trim();
+  return [
+    typeof event.event === "string" ? event.event : "event",
+    String(payment.id ?? subscription.id ?? "none"),
+    String(event.created_at ?? ""),
+  ].join(":");
+}
+
+async function liveSubscription(subscriptionId: string, fallback: Record<string, unknown>) {
+  const currentEnd = (value: unknown): number | string | null => {
+    if (typeof value === "number" || typeof value === "string") return value;
+    return null;
+  };
+  if (!subscriptionId) {
+    return {
+      status: String(fallback.status ?? ""),
+      paidCount: Number(fallback.paid_count ?? 0),
+      currentEnd: currentEnd(fallback.current_end),
+    };
+  }
+  try {
+    const live = await getRazorpay().subscriptions.fetch(subscriptionId);
+    return {
+      status: String(live.status ?? fallback.status ?? ""),
+      paidCount: Number(live.paid_count ?? fallback.paid_count ?? 0),
+      currentEnd: currentEnd(live.current_end ?? fallback.current_end),
+    };
+  } catch (error) {
+    logger.warn("razorpay.webhook.fetch_failed", {
+      hasSubscription: Boolean(subscriptionId),
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return {
+      status: String(fallback.status ?? ""),
+      paidCount: Number(fallback.paid_count ?? 0),
+      currentEnd: currentEnd(fallback.current_end),
+    };
+  }
 }
 
 export async function POST(request: Request) {
@@ -42,20 +85,25 @@ export async function POST(request: Request) {
     const payment = entity(event, "payment");
     const subscription = entity(event, "subscription");
     const invoice = entity(event, "invoice");
-    const key = eventKey(event, payment, subscription);
+    const key = razorpayEventId(event, request, payment, subscription);
 
     const db = getAdminDb();
     const eventRef = db.collection(collections.webhookEvents).doc(key);
-    const existing = await eventRef.get();
-    if (existing.exists && existing.data()?.status === "completed") {
+    const claimed = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(eventRef);
+      if (existing.exists && existing.data()?.status === "completed") return false;
+      tx.set(eventRef, {
+        eventId: key,
+        event: event.event,
+        status: "processing",
+        createdAt: existing.data()?.createdAt ?? nowIso(),
+      });
+      return true;
+    });
+    if (!claimed) {
+      logger.info("razorpay.webhook.duplicate", { event: event.event, eventId: key });
       return json({ ok: true, duplicate: true });
     }
-    await eventRef.set({
-      eventId: key,
-      event: event.event,
-      status: "processing",
-      createdAt: existing.data()?.createdAt ?? nowIso(),
-    });
 
     const subscriptionId = String(
       subscription.id ?? payment.subscription_id ?? invoice.subscription_id ?? "",
@@ -87,12 +135,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const live = await liveSubscription(subscriptionId, subscription);
     logger.info("razorpay.webhook event", {
       event: event.event,
       hasUser: Boolean(resolvedUserId),
       hasPlan: Boolean(resolvedPlanId),
       hasSubscription: Boolean(subscriptionId),
       hasPayment: Boolean(payment.id),
+      razorpayStatus: live.status || null,
+      paidCount: live.paidCount,
     });
 
     const paymentId = payment.id ? String(payment.id) : invoice.payment_id ? String(invoice.payment_id) : null;
@@ -104,21 +155,7 @@ export async function POST(request: Request) {
 
     switch (event.event) {
       case "subscription.authenticated":
-      case "subscription.activated": {
-        if (resolvedUserId && resolvedPlanId) {
-          await applySubscriptionActivation({
-            userId: resolvedUserId,
-            planId: resolvedPlanId,
-            razorpaySubscriptionId: subscriptionId || `sub_${resolvedUserId}`,
-            paymentId,
-            amount,
-            status: event.event === "subscription.authenticated" ? "authenticated" : "active",
-          });
-        } else {
-          logger.warn("Razorpay activation skipped; missing user or plan", { event: event.event });
-        }
-        break;
-      }
+      case "subscription.activated":
       case "subscription.charged":
       case "payment.captured":
       case "invoice.paid": {
@@ -129,19 +166,37 @@ export async function POST(request: Request) {
             razorpaySubscriptionId: subscriptionId || `pay_${String(payment.id ?? "")}`,
             paymentId,
             amount,
-            status: "active",
+            status: event.event === "subscription.authenticated" ? "authenticated" : "active",
           });
         } else {
-          logger.warn("Razorpay capture skipped; missing user or plan", { event: event.event });
+          logger.warn("Razorpay activation skipped; missing user or plan", { event: event.event });
         }
         break;
       }
-      case "payment.failed":
-      case "subscription.pending": {
-        if (resolvedUserId) {
+      case "payment.failed": {
+        if (resolvedUserId && live.paidCount < 1) {
           await applyPaymentFailure({
             userId: resolvedUserId,
             razorpaySubscriptionId: subscriptionId || null,
+          });
+        } else if (resolvedUserId && subscriptionId) {
+          await applySubscriptionStatus(subscriptionId, "past_due", {
+            paidCount: live.paidCount,
+            currentEnd: live.currentEnd,
+          });
+        }
+        break;
+      }
+      case "subscription.pending": {
+        if (subscriptionId && live.paidCount >= 1) {
+          await applySubscriptionStatus(subscriptionId, "past_due", {
+            paidCount: live.paidCount,
+            currentEnd: live.currentEnd,
+          });
+        } else {
+          logger.info("razorpay.webhook.pending_ignored", {
+            event: event.event,
+            paidCount: live.paidCount,
           });
         }
         break;
@@ -153,18 +208,26 @@ export async function POST(request: Request) {
       case "subscription.resumed":
       case "subscription.updated": {
         if (subscriptionId) {
-          const remote = String(subscription.status ?? "");
           const mapped: Record<string, SubscriptionStatus> = {
             "subscription.halted": "halted",
             "subscription.cancelled": "cancelled",
             "subscription.completed": "completed",
             "subscription.paused": "paused",
             "subscription.resumed": "active",
-            "subscription.updated": razorpayStatusIsPaid(remote)
-              ? mapRazorpaySubscriptionStatus(remote)
-              : mapRazorpaySubscriptionStatus(remote),
           };
-          await applySubscriptionStatus(subscriptionId, mapped[event.event] ?? "active");
+          const incoming =
+            mapped[event.event] ?? mapRazorpaySubscriptionStatus(live.status || String(subscription.status ?? ""));
+          const result = await applySubscriptionStatus(subscriptionId, incoming, {
+            paidCount: live.paidCount,
+            currentEnd: live.currentEnd,
+          });
+          logger.info("razorpay.webhook.status_applied", {
+            event: event.event,
+            incoming,
+            applied: result.status,
+            reason: result.reason,
+            applyToUser: result.applyToUser,
+          });
         }
         break;
       }

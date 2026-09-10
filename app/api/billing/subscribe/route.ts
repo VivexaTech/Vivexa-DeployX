@@ -8,10 +8,32 @@ import { collections } from "@/lib/firebase/collections";
 import { handleRouteError, json, readJson } from "@/lib/http";
 import { getRazorpay } from "@/lib/razorpay/client";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  mapRazorpaySubscriptionStatus,
+  razorpayStatusIsPaid,
+  syncSubscriptionFromRazorpay,
+} from "@/lib/subscriptions/service";
 import { nowIso } from "@/lib/utils";
 import { subscribeSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
+
+function checkoutPayload(
+  user: { name: string; email: string },
+  plan: { planName: string; planPrice: number; currency: string },
+  subscriptionId: string,
+) {
+  return {
+    keyId: getRazorpayPublicKey(),
+    subscriptionId,
+    planName: plan.planName,
+    amount: plan.planPrice,
+    currency: plan.currency,
+    name: user.name,
+    email: user.email,
+    callbackUrl: `${getAppUrl()}/dashboard/billing?checkout=1`,
+  };
+}
 
 export async function POST(request: Request) {
   try {
@@ -31,6 +53,31 @@ export async function POST(request: Request) {
     }
     const user = await getUserProfile(session.uid);
     const razorpay = getRazorpay();
+
+    if (user.subscriptionId) {
+      try {
+        const existing = await razorpay.subscriptions.fetch(user.subscriptionId);
+        const remoteStatus = String(existing.status ?? "");
+        const paidCount = Number(existing.paid_count ?? 0);
+        if (paidCount >= 1 || razorpayStatusIsPaid(remoteStatus)) {
+          const synced = await syncSubscriptionFromRazorpay(session.uid);
+          return json({
+            alreadyActive: true,
+            subscriptionId: user.subscriptionId,
+            status: synced.status,
+          });
+        }
+        if (
+          (remoteStatus === "created" || remoteStatus === "authenticated") &&
+          String(existing.plan_id ?? "") === plan.razorpayPlanId
+        ) {
+          return json(checkoutPayload(user, plan, String(existing.id)));
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+      }
+    }
+
     const subscription = await razorpay.subscriptions.create({
       plan_id: plan.razorpayPlanId,
       total_count: plan.billingCycle === "yearly" ? 20 : 120,
@@ -48,7 +95,7 @@ export async function POST(request: Request) {
       planId: plan.id,
       razorpaySubscriptionId: subscription.id,
       razorpayPlanId: plan.razorpayPlanId,
-      status: "pending",
+      status: mapRazorpaySubscriptionStatus(String(subscription.status ?? "created")),
       startDate: null,
       renewalDate: null,
       amount: plan.planPrice,
@@ -67,16 +114,7 @@ export async function POST(request: Request) {
       { merge: true },
     );
 
-    return json({
-      keyId: getRazorpayPublicKey(),
-      subscriptionId: subscription.id,
-      planName: plan.planName,
-      amount: plan.planPrice,
-      currency: plan.currency,
-      name: user.name,
-      email: user.email,
-      callbackUrl: `${getAppUrl()}/dashboard/billing?checkout=1`,
-    });
+    return json(checkoutPayload(user, plan, String(subscription.id)));
   } catch (error) {
     return handleRouteError(error, "billing.subscribe");
   }

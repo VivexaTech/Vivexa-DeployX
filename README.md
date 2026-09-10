@@ -159,6 +159,7 @@ https://YOUR_APP_URL/api/webhooks/razorpay
 - `subscription.paused`
 - `subscription.resumed`
 - `subscription.updated`
+- `invoice.paid`
 
 5. Put the webhook secret in `RAZORPAY_WEBHOOK_SECRET`.
 

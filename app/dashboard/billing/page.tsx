@@ -34,7 +34,11 @@ function BillingInner() {
 
   useEffect(() => {
     if (!data || pendingSyncStarted.current) return;
-    if (data.user.subscriptionStatus === "pending") {
+    if (
+      data.user.subscriptionStatus === "pending" ||
+      data.user.subscriptionStatus === "cancelled" ||
+      data.user.subscriptionStatus === "failed"
+    ) {
       pendingSyncStarted.current = true;
       setConfirming(true);
     }
@@ -66,7 +70,11 @@ function BillingInner() {
   async function subscribe(planId: string) {
     setBusy(true);
     try {
-      const path = data?.user.subscriptionId ? "/api/billing/change-plan" : "/api/billing/subscribe";
+      const path =
+        data?.user.subscriptionId &&
+        (data.user.subscriptionStatus === "active" || data.user.subscriptionStatus === "authenticated")
+          ? "/api/billing/change-plan"
+          : "/api/billing/subscribe";
       const payload = await apiFetch<{
         keyId?: string;
         subscriptionId: string;
@@ -75,7 +83,14 @@ function BillingInner() {
         email?: string;
         checkout?: boolean;
         changed?: boolean;
+        alreadyActive?: boolean;
+        status?: string;
       }>(path, { method: "POST", body: JSON.stringify({ planId }) });
+      if (payload.alreadyActive) {
+        push({ title: "Subscription Active", tone: "success" });
+        await refresh();
+        return;
+      }
       if (payload.changed) {
         push({ title: "Plan change requested. Webhook confirmation will update limits.", tone: "success" });
         await refresh();
@@ -111,6 +126,7 @@ function BillingInner() {
         <h2 className="mt-1 text-2xl font-semibold">{data.user.activePlanName ?? "No active plan"}</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           <Badge tone={statusTone(data.user.subscriptionStatus)}>{data.user.subscriptionStatus}</Badge>
+          {data.user.cancelAtPeriodEnd ? <Badge tone="warning">Ends at period end</Badge> : null}
         </div>
         {confirming || data.user.subscriptionStatus === "pending" ? (
           <p className="mt-3 text-sm text-warning">

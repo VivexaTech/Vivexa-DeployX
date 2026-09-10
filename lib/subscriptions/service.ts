@@ -14,6 +14,7 @@ import { collections, userInvoicesPath } from "@/lib/firebase/collections";
 import { createNotification } from "@/lib/notifications/create";
 import { logger } from "@/lib/logger";
 import { nowIso } from "@/lib/utils";
+import { decideSubscriptionStatus, isPaidSubscriptionStatus } from "@/lib/subscriptions/state";
 import type { Invoice, SubscriptionStatus, UserProfile } from "@/types";
 
 const REMINDER_ELIGIBLE_STATUSES = new Set(["active", "authenticated"]);
@@ -46,6 +47,7 @@ export async function applySubscriptionActivation(input: {
   amount?: number;
   status?: SubscriptionStatus;
   sendMail?: boolean;
+  cancelAtPeriodEnd?: boolean;
 }) {
   const db = getAdminDb();
   const plan = await getPlanById(input.planId);
@@ -72,6 +74,7 @@ export async function applySubscriptionActivation(input: {
       renewalDate,
       websiteLimit: plan?.maxWebsites ?? user.websiteLimit,
       gracePeriodDays: plan?.gracePeriodDays ?? user.gracePeriodDays,
+      cancelAtPeriodEnd: Boolean(input.cancelAtPeriodEnd),
       updatedAt: nowIso(),
     },
     { merge: true },
@@ -91,6 +94,7 @@ export async function applySubscriptionActivation(input: {
       currency: plan?.currency ?? "INR",
       reminderSentForRenewal: null,
       reminderSentAt: null,
+      cancelAtPeriodEnd: Boolean(input.cancelAtPeriodEnd),
       createdAt: nowIso(),
       updatedAt: nowIso(),
     },
@@ -227,19 +231,69 @@ export async function applyPaymentFailure(input: {
 export async function applySubscriptionStatus(
   razorpaySubscriptionId: string,
   status: SubscriptionStatus,
+  options?: { explicitCancel?: boolean; paidCount?: number; currentEnd?: number | string | null },
 ) {
   const db = getAdminDb();
   const ref = db.collection(collections.subscriptions).doc(razorpaySubscriptionId);
   const snap = await ref.get();
-  if (!snap.exists) return;
-  const userId = String(snap.data()?.userId ?? "");
-  await ref.set({ status, updatedAt: nowIso() }, { merge: true });
-  if (userId) {
-    await db.collection(collections.users).doc(userId).set(
-      { subscriptionStatus: status, updatedAt: nowIso() },
-      { merge: true },
-    );
+  if (!snap.exists) return { applied: false, status, reason: "missing_subscription", cancelAtPeriodEnd: false, applyToUser: false };
+  const data = snap.data() ?? {};
+  const userId = String(data.userId ?? "");
+  const userSnap = userId ? await db.collection(collections.users).doc(userId).get() : null;
+  const user = userSnap?.data() as UserProfile | undefined;
+  const decision = decideSubscriptionStatus({
+    localStatus: String(user?.subscriptionStatus ?? data.status ?? "pending"),
+    incoming: status,
+    paidCount: options?.paidCount ?? Number(data.paidCount ?? 0),
+    renewalDate: String(user?.renewalDate ?? data.renewalDate ?? ""),
+    currentEnd: options?.currentEnd ?? data.currentEnd ?? null,
+    isCurrentSubscription: !user?.subscriptionId || user.subscriptionId === razorpaySubscriptionId,
+    explicitCancel: options?.explicitCancel,
+  });
+
+  logger.info("subscription.status.decision", {
+    subscriptionId: razorpaySubscriptionId,
+    incoming: status,
+    local: user?.subscriptionStatus ?? data.status ?? null,
+    applied: decision.status,
+    applyToUser: decision.applyToUser,
+    reason: decision.reason,
+    paidCount: options?.paidCount ?? Number(data.paidCount ?? 0),
+  });
+
+  await ref.set(
+    {
+      status: decision.applyToUser ? decision.status : status,
+      razorpayStatus: status,
+      cancelAtPeriodEnd: decision.cancelAtPeriodEnd,
+      paidCount: options?.paidCount ?? data.paidCount ?? null,
+      updatedAt: nowIso(),
+    },
+    { merge: true },
+  );
+
+  if (userId && decision.applyToUser) {
+    const planId = String(data.planId ?? user?.activePlanId ?? "");
+    if (isPaidSubscriptionStatus(decision.status) && planId) {
+      await applySubscriptionActivation({
+        userId,
+        planId,
+        razorpaySubscriptionId,
+        status: decision.status,
+        cancelAtPeriodEnd: decision.cancelAtPeriodEnd,
+      });
+    } else {
+      await db.collection(collections.users).doc(userId).set(
+        {
+          subscriptionStatus: decision.status,
+          cancelAtPeriodEnd: decision.cancelAtPeriodEnd,
+          updatedAt: nowIso(),
+        },
+        { merge: true },
+      );
+    }
   }
+  return { applied: true, ...decision };
 }
 
 function isReminderEligible(status: string) {
@@ -413,20 +467,42 @@ export async function syncSubscriptionFromRazorpay(userId: string) {
   const { getRazorpay } = await import("@/lib/razorpay/client");
   const remote = await getRazorpay().subscriptions.fetch(user.subscriptionId);
   const remoteStatus = String(remote.status ?? "");
+  const paidCount = Number(remote.paid_count ?? 0);
   const local = await db.collection(collections.subscriptions).doc(user.subscriptionId).get();
   const planId = String(local.data()?.planId ?? user.activePlanId ?? "");
-  if (razorpayStatusIsPaid(remoteStatus) && planId) {
+  const mapped = mapRazorpaySubscriptionStatus(remoteStatus);
+  logger.info("subscription.sync.remote", {
+    remoteStatus,
+    paidCount,
+    localStatus: user.subscriptionStatus,
+    mapped,
+  });
+  if ((razorpayStatusIsPaid(remoteStatus) || paidCount >= 1) && planId) {
+    const decision = decideSubscriptionStatus({
+      localStatus: user.subscriptionStatus,
+      incoming: mapped,
+      paidCount,
+      renewalDate: user.renewalDate,
+      currentEnd: remote.current_end as number | undefined,
+      isCurrentSubscription: true,
+    });
     await applySubscriptionActivation({
       userId,
       planId,
       razorpaySubscriptionId: user.subscriptionId,
-      status: mapRazorpaySubscriptionStatus(remoteStatus),
+      status: isPaidSubscriptionStatus(decision.status) ? decision.status : "active",
     });
-    return { status: mapRazorpaySubscriptionStatus(remoteStatus), synced: true };
+    if (decision.cancelAtPeriodEnd) {
+      await applySubscriptionStatus(user.subscriptionId, mapped, {
+        paidCount,
+        currentEnd: remote.current_end as number | undefined,
+      });
+    }
+    return { status: decision.status, synced: true };
   }
-  const mapped = mapRazorpaySubscriptionStatus(remoteStatus);
-  if (mapped !== user.subscriptionStatus) {
-    await applySubscriptionStatus(user.subscriptionId, mapped);
-  }
-  return { status: mapped, synced: mapped !== user.subscriptionStatus };
+  const decision = await applySubscriptionStatus(user.subscriptionId, mapped, {
+    paidCount,
+    currentEnd: remote.current_end as number | undefined,
+  });
+  return { status: decision.status, synced: decision.applied };
 }

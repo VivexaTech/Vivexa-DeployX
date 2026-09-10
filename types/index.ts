@@ -85,6 +85,7 @@ export type UserProfile = {
   websiteLimit: number;
   websiteCount: number;
   gracePeriodDays: number;
+  cancelAtPeriodEnd?: boolean;
   createdAt: string;
   updatedAt: string;
 };

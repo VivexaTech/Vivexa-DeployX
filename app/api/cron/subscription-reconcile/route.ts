@@ -30,20 +30,22 @@ export async function GET(request: Request) {
         const localStatus = String(doc.data().status ?? "");
         const userId = String(doc.data().userId ?? "");
         const planId = String(doc.data().planId ?? "");
-        if (razorpayStatusIsPaid(remoteStatus) && userId && planId && localStatus === "pending") {
-          await applySubscriptionActivation({
-            userId,
-            planId,
-            razorpaySubscriptionId: doc.id,
-            status: mapped,
-          });
-          updated += 1;
-          continue;
+        const paidCount = Number(remote.paid_count ?? 0);
+        if ((razorpayStatusIsPaid(remoteStatus) || paidCount >= 1) && userId && planId && localStatus !== mapped) {
+          if (localStatus === "pending" || localStatus === "failed" || localStatus === "cancelled") {
+            await applySubscriptionActivation({
+              userId,
+              planId,
+              razorpaySubscriptionId: doc.id,
+              status: razorpayStatusIsPaid(remoteStatus) ? mapped : "active",
+            });
+          }
         }
-        if (mapped && mapped !== localStatus) {
-          await applySubscriptionStatus(doc.id, mapped);
-          updated += 1;
-        }
+        await applySubscriptionStatus(doc.id, mapped, {
+          paidCount,
+          currentEnd: remote.current_end as number | undefined,
+        });
+        updated += 1;
       } catch (error) {
         logger.warn("Subscription reconcile skipped", {
           subscriptionId: doc.id,

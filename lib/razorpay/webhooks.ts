@@ -18,6 +18,7 @@ export function verifyRazorpayWebhook(rawBody: string, signature: string | null)
 }
 
 export type RazorpayWebhookEvent = {
+  id?: string;
   event: string;
   created_at?: number;
   payload?: {
