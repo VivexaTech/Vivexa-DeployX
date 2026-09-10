@@ -1,6 +1,7 @@
+import { signValue, tokenStoreReady, verifySignedValue } from "@/lib/crypto";
 import { getAppUrl, getRequestOrigin, readEnv, requireServerEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
-import { signValue, verifySignedValue } from "@/lib/crypto";
+import { logger } from "@/lib/logger";
 
 const GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN = "https://github.com/login/oauth/access_token";
@@ -24,6 +25,7 @@ export function githubOAuthLogMeta(request: Request, redirectUri: string) {
     environment: readEnv("VERCEL") === "1" ? "vercel" : process.env.NODE_ENV || "development",
     nodeEnv: process.env.NODE_ENV ?? null,
     callbackRoute: GITHUB_CALLBACK_PATH,
+    vaultReady: tokenStoreReady(),
   };
 }
 
@@ -33,7 +35,9 @@ export function createGithubState(uid: string, redirectUri: string) {
 }
 
 export function parseGithubState(state: string) {
-  const [encoded, signature] = state.split(".");
+  const dot = state.indexOf(".");
+  const encoded = dot === -1 ? "" : state.slice(0, dot);
+  const signature = dot === -1 ? "" : state.slice(dot + 1);
   if (!encoded || !signature) {
     throw new AppError("VALIDATION", "Invalid GitHub authorization state.", 400);
   }
@@ -53,6 +57,13 @@ export function parseGithubState(state: string) {
 
 export function getGithubAuthorizeUrl(uid: string, request: Request) {
   requireServerEnv(["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]);
+  if (!tokenStoreReady()) {
+    throw new AppError(
+      "CONFIG_MISSING",
+      "APP_ENCRYPTION_KEY is required to connect GitHub.",
+      503,
+    );
+  }
   const redirectUri = getGithubCallbackUrl(request);
   const params = new URLSearchParams({
     client_id: readEnv("GITHUB_CLIENT_ID"),
@@ -64,32 +75,64 @@ export function getGithubAuthorizeUrl(uid: string, request: Request) {
   return { url: `${GITHUB_AUTHORIZE}?${params.toString()}`, redirectUri };
 }
 
+function parseTokenPayload(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return {} as { access_token?: string; error?: string; error_description?: string };
+  if (trimmed.startsWith("{")) {
+    return JSON.parse(trimmed) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+  }
+  const params = new URLSearchParams(trimmed);
+  return {
+    access_token: params.get("access_token") || undefined,
+    error: params.get("error") || undefined,
+    error_description: params.get("error_description") || undefined,
+  };
+}
+
 export async function exchangeGithubCode(code: string, redirectUri: string) {
   requireServerEnv(["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]);
+  const body = new URLSearchParams({
+    client_id: readEnv("GITHUB_CLIENT_ID"),
+    client_secret: readEnv("GITHUB_CLIENT_SECRET"),
+    code,
+    redirect_uri: redirectUri,
+  });
   const response = await fetch(GITHUB_TOKEN, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
-      client_id: readEnv("GITHUB_CLIENT_ID"),
-      client_secret: readEnv("GITHUB_CLIENT_SECRET"),
-      code,
-      redirect_uri: redirectUri,
-    }),
+    body,
   });
-  const data = (await response.json()) as {
-    access_token?: string;
-    error?: string;
-    error_description?: string;
-    scope?: string;
-  };
+  const raw = await response.text();
+  let data: { access_token?: string; error?: string; error_description?: string };
+  try {
+    data = parseTokenPayload(raw);
+  } catch {
+    logger.error("github.oauth.exchange.parse_failed", {
+      httpStatus: response.status,
+      contentType: response.headers.get("content-type"),
+    });
+    throw new AppError("GITHUB_ERROR", "GitHub token exchange returned an invalid response.", 502);
+  }
+  logger.info("github.oauth.exchange", {
+    httpStatus: response.status,
+    hasAccessGrant: Boolean(data.access_token),
+    githubError: data.error ?? null,
+  });
   if (!data.access_token) {
     throw new AppError(
       "GITHUB_ERROR",
-      data.error_description || "GitHub authorization failed.",
+      data.error === "redirect_uri_mismatch"
+        ? "GitHub rejected the callback URL. Check the OAuth App authorization callback URL."
+        : "GitHub authorization failed. Please retry.",
       400,
+      { githubError: data.error ?? "missing_access_token", httpStatus: response.status },
     );
   }
   return data.access_token;

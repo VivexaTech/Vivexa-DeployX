@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {

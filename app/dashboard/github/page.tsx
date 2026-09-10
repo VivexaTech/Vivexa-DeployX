@@ -19,9 +19,25 @@ function GithubInner() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (params.get("connected")) push({ title: "GitHub connected", tone: "success" });
-    if (params.get("error")) push({ title: "GitHub authorization failed. Please retry.", tone: "danger" });
-  }, [params, push]);
+    const error = params.get("error");
+    if (params.get("connected")) {
+      push({ title: "GitHub connected", tone: "success" });
+      void refresh();
+    }
+    if (error === "github_denied") {
+      push({ title: "GitHub authorization was cancelled. Please try again.", tone: "danger" });
+    } else if (error === "github_state") {
+      push({ title: "GitHub authorization expired. Please try again.", tone: "danger" });
+    } else if (error === "github_exchange") {
+      push({ title: "GitHub did not complete token exchange. Please retry.", tone: "danger" });
+    } else if (error === "github_user") {
+      push({ title: "GitHub authorized, but the account profile could not be loaded.", tone: "danger" });
+    } else if (error === "github_store") {
+      push({ title: "GitHub authorized, but saving the connection failed. Please retry.", tone: "danger" });
+    } else if (error) {
+      push({ title: "GitHub authorization failed. Please retry.", tone: "danger" });
+    }
+  }, [params, push, refresh]);
 
   async function connect() {
     const payload = await apiFetch<{ url: string }>("/api/github/connect");

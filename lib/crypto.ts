@@ -2,8 +2,22 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "crypt
 import { readEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 
+function getAppSecret() {
+  return (
+    readEnv("APP_ENCRYPTION_KEY") ||
+    readEnv("CRON_SECRET") ||
+    readEnv("SESSION_SECRET") ||
+    [process.env.VERCEL_PROJECT_ID, process.env.NEXT_PUBLIC_FIREBASE_APP_ID].filter(Boolean).join(":") ||
+    (process.env.VERCEL === "1" ? "" : "deployx-dev")
+  );
+}
+
+export function tokenStoreReady() {
+  return Boolean(getAppSecret());
+}
+
 function getKey() {
-  const secret = readEnv("APP_ENCRYPTION_KEY") || readEnv("CRON_SECRET");
+  const secret = getAppSecret();
   if (!secret) {
     throw new AppError(
       "CONFIG_MISSING",
@@ -37,7 +51,7 @@ export function decryptSecret(payload: string) {
 }
 
 export function signValue(value: string) {
-  const secret = readEnv("APP_ENCRYPTION_KEY") || readEnv("CRON_SECRET") || "deployx-dev";
+  const secret = getAppSecret() || "deployx-dev";
   return createHmac("sha256", secret).update(value).digest("hex");
 }
 

@@ -8,6 +8,7 @@ import {
   readEnv,
 } from "@/lib/env.server";
 import { probeAdminSdk } from "@/lib/firebase/admin";
+import { tokenStoreReady } from "@/lib/crypto";
 import { GITHUB_CALLBACK_PATH } from "@/lib/github/oauth";
 
 export const runtime = "nodejs";
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
       appUrl: getAppUrl(),
       requestOrigin,
       redirectUri: `${requestOrigin}${GITHUB_CALLBACK_PATH}`,
+      vaultReady: tokenStoreReady(),
     },
   });
 }
