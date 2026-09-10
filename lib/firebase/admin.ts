@@ -14,6 +14,7 @@ type AdminNamespace = {
   apps: Array<App | null>;
   initializeApp: (options: {
     credential: unknown;
+    projectId?: string;
   }) => App;
   credential: {
     cert: (serviceAccount: { projectId: string; clientEmail: string; privateKey: string }) => unknown;
@@ -112,6 +113,7 @@ export function getAdminApp() {
         clientEmail: getFirebaseAdminClientEmail(),
         privateKey,
       }),
+      projectId: getFirebaseAdminProjectId(),
     }) as App;
     logger.info("Firebase Admin initialized", {
       projectId: getFirebaseAdminProjectId(),
@@ -132,11 +134,13 @@ export function getAdminApp() {
 }
 
 export function getAdminAuth(): Auth {
-  return loadAdminNamespace().auth(getAdminApp()) as Auth;
+  getAdminApp();
+  return loadAdminNamespace().auth();
 }
 
 export function getAdminDb(): Firestore {
-  return loadAdminNamespace().firestore(getAdminApp()) as Firestore;
+  getAdminApp();
+  return loadAdminNamespace().firestore();
 }
 
 export function tryGetAdminDb() {

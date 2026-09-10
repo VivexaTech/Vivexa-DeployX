@@ -16,6 +16,22 @@ function mapUnknownError(error: unknown) {
   if (code.startsWith("auth/")) {
     return new AppError("UNAUTHENTICATED", "Google sign-in expired. Please try again.", 401);
   }
+  const numericCode =
+    typeof error === "object" && error && "code" in error ? (error as { code: unknown }).code : undefined;
+  if (numericCode === 5 || numericCode === "5") {
+    return new AppError(
+      "FIREBASE_ERROR",
+      "Firestore is not available. In Firebase Console → Firestore Database, create a database in Native mode for this project, then try signing in again.",
+      503,
+    );
+  }
+  if (numericCode === 7 || numericCode === "7") {
+    return new AppError(
+      "FIREBASE_ERROR",
+      "Firebase Admin cannot write the user profile. Grant the service account Cloud Datastore User on this project.",
+      503,
+    );
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (/reserved|not allowed|already in use|valid domain/i.test(message)) {
     return new AppError("VALIDATION", message, 400);
