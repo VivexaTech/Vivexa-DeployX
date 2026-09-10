@@ -2,6 +2,7 @@ import { upsertUserFromDecoded, verifyRequestUser } from "@/lib/auth/session";
 import { getCurrentUsage, getUserPlan, getUserProfile, isSubscriptionEligible } from "@/lib/entitlements";
 import { getGithubConnection } from "@/lib/github/client";
 import { handleRouteError, json } from "@/lib/http";
+import { logger } from "@/lib/logger";
 import { listRecentDeployments, listUserProjects } from "@/lib/projects/service";
 import { AppError } from "@/lib/errors";
 
@@ -11,6 +12,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const session = await verifyRequestUser(request);
+    logger.info("me authenticated", {
+      hasUid: Boolean(session.uid),
+      hasEmail: Boolean(session.email),
+      usedBearer: Boolean(request.headers.get("authorization")?.startsWith("Bearer ")),
+    });
     const user = await getUserProfile(session.uid).catch(async (error) => {
       if (error instanceof AppError && error.code === "NOT_FOUND") {
         return upsertUserFromDecoded(session);

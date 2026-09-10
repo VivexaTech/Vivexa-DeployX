@@ -57,6 +57,8 @@ export function handleRouteError(error: unknown, context: string) {
   error = mapUnknownError(error);
   const publicError = toPublicError(error);
   logger.error(`${context} failed`, {
+    context,
+    name: error instanceof Error ? error.name : "unknown",
     code: publicError.code,
     status: publicError.status,
     message: error instanceof Error ? error.message : "unknown",

@@ -1,11 +1,41 @@
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { isAdminSdkConfigured, readEnv } from "@/lib/env.server";
+import type { App } from "firebase-admin/app";
+import type { Auth } from "firebase-admin/auth";
+import type { Firestore } from "firebase-admin/firestore";
+import {
+  getFirebaseAdminClientEmail,
+  getFirebaseAdminProjectId,
+  isAdminSdkConfigured,
+  readEnv,
+} from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 let adminApp: App | null = null;
+
+function loadAdminSdk() {
+  try {
+    // Runtime require so Vercel can resolve node_modules/firebase-admin.
+    // Static ESM imports are rewritten by Turbopack to hashed paths that
+    // are often missing from serverless traces (empty HTTP 500).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const app = require("firebase-admin/app") as typeof import("firebase-admin/app");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const auth = require("firebase-admin/auth") as typeof import("firebase-admin/auth");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const firestore = require("firebase-admin/firestore") as typeof import("firebase-admin/firestore");
+    return { app, auth, firestore };
+  } catch (error) {
+    logger.error("firebase-admin module failed to load", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    throw new AppError(
+      "FIREBASE_ERROR",
+      "Authentication service temporarily unavailable",
+      500,
+    );
+  }
+}
 
 function decodeMaybeBase64(value: string) {
   const compact = value.replace(/\s+/g, "");
@@ -39,8 +69,8 @@ function getPrivateKey() {
 export function getAdminApp() {
   if (!isAdminSdkConfigured()) {
     logger.error("Firebase Admin is not configured", {
-      hasProjectId: Boolean(readEnv("FIREBASE_ADMIN_PROJECT_ID")),
-      hasClientEmail: Boolean(readEnv("FIREBASE_ADMIN_CLIENT_EMAIL")),
+      hasProjectId: Boolean(getFirebaseAdminProjectId()),
+      hasClientEmail: Boolean(getFirebaseAdminClientEmail()),
       hasPem: Boolean(readEnv("FIREBASE_ADMIN_PRIVATE_KEY") || readEnv("FIREBASE_PRIVATE_KEY")),
       hasPemBase64: Boolean(readEnv("FIREBASE_ADMIN_PRIVATE_KEY_BASE64")),
     });
@@ -51,8 +81,9 @@ export function getAdminApp() {
     );
   }
   if (adminApp) return adminApp;
-  if (getApps().length > 0) {
-    adminApp = getApps()[0]!;
+  const sdk = loadAdminSdk();
+  if (sdk.app.getApps().length > 0) {
+    adminApp = sdk.app.getApps()[0]!;
     return adminApp;
   }
   const privateKey = getPrivateKey();
@@ -64,16 +95,22 @@ export function getAdminApp() {
     );
   }
   try {
-    adminApp = initializeApp({
-      credential: cert({
-        projectId: readEnv("FIREBASE_ADMIN_PROJECT_ID"),
-        clientEmail: readEnv("FIREBASE_ADMIN_CLIENT_EMAIL"),
+    adminApp = sdk.app.initializeApp({
+      credential: sdk.app.cert({
+        projectId: getFirebaseAdminProjectId(),
+        clientEmail: getFirebaseAdminClientEmail(),
         privateKey,
       }),
     });
+    logger.info("Firebase Admin initialized", {
+      projectId: getFirebaseAdminProjectId(),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    logger.error("Firebase Admin failed to initialize", { message });
+    logger.error("Firebase Admin failed to initialize", {
+      name: error instanceof Error ? error.name : "unknown",
+      message,
+    });
     throw new AppError(
       "CONFIG_MISSING",
       "Firebase Admin credentials are invalid. Check FIREBASE_ADMIN_PRIVATE_KEY formatting in Vercel Production.",
@@ -84,11 +121,13 @@ export function getAdminApp() {
 }
 
 export function getAdminAuth(): Auth {
-  return getAuth(getAdminApp());
+  const sdk = loadAdminSdk();
+  return sdk.auth.getAuth(getAdminApp());
 }
 
 export function getAdminDb(): Firestore {
-  return getFirestore(getAdminApp());
+  const sdk = loadAdminSdk();
+  return sdk.firestore.getFirestore(getAdminApp());
 }
 
 export function tryGetAdminDb() {

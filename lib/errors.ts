@@ -42,7 +42,7 @@ export function toPublicError(error: unknown) {
   }
 
   return {
-    error: "Something went wrong. Please try again.",
+    error: "Authentication service temporarily unavailable",
     code: "INTERNAL" as ErrorCode,
     status: 500,
   };

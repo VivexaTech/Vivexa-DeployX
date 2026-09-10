@@ -12,10 +12,30 @@ export function readEnv(name: string, fallback = "") {
   return value.trim() || fallback;
 }
 
+function firstEnv(...names: string[]) {
+  for (const name of names) {
+    const value = readEnv(name);
+    if (value) return value;
+  }
+  return "";
+}
+
+export function getFirebaseAdminProjectId() {
+  return firstEnv(
+    "FIREBASE_ADMIN_PROJECT_ID",
+    "FIREBASE_PROJECT_ID",
+    "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+  );
+}
+
+export function getFirebaseAdminClientEmail() {
+  return firstEnv("FIREBASE_ADMIN_CLIENT_EMAIL", "FIREBASE_CLIENT_EMAIL");
+}
+
 export function isAdminSdkConfigured() {
   return Boolean(
-    readEnv("FIREBASE_ADMIN_PROJECT_ID") &&
-      readEnv("FIREBASE_ADMIN_CLIENT_EMAIL") &&
+    getFirebaseAdminProjectId() &&
+      getFirebaseAdminClientEmail() &&
       (readEnv("FIREBASE_ADMIN_PRIVATE_KEY") ||
         readEnv("FIREBASE_PRIVATE_KEY") ||
         readEnv("FIREBASE_ADMIN_PRIVATE_KEY_BASE64")),

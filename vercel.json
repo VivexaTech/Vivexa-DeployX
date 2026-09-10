@@ -1,4 +1,6 @@
 {
+  "buildCommand": "next build --webpack",
+  "framework": "nextjs",
   "crons": [
     {
       "path": "/api/cron/renewal-reminders",
