@@ -1,8 +1,6 @@
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import type { App } from "firebase-admin/app";
-import type { Auth } from "firebase-admin/auth";
-import type { Firestore } from "firebase-admin/firestore";
+import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getAuth, type Auth } from "firebase-admin/auth";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import {
   getFirebaseAdminClientEmail,
   getFirebaseAdminProjectId,
@@ -13,28 +11,6 @@ import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 let adminApp: App | null = null;
-
-function loadAdminSdk() {
-  try {
-    const fromProjectRoot = createRequire(join(process.cwd(), "package.json"));
-    return {
-      app: fromProjectRoot("firebase-admin/app") as typeof import("firebase-admin/app"),
-      auth: fromProjectRoot("firebase-admin/auth") as typeof import("firebase-admin/auth"),
-      firestore: fromProjectRoot("firebase-admin/firestore") as typeof import("firebase-admin/firestore"),
-    };
-  } catch (error) {
-    logger.error("firebase-admin module failed to load", {
-      name: error instanceof Error ? error.name : "unknown",
-      message: error instanceof Error ? error.message : "unknown",
-      node: process.versions.node,
-    });
-    throw new AppError(
-      "FIREBASE_ERROR",
-      "Authentication service temporarily unavailable",
-      500,
-    );
-  }
-}
 
 function decodeMaybeBase64(value: string) {
   const compact = value.replace(/\s+/g, "");
@@ -80,9 +56,8 @@ export function getAdminApp() {
     );
   }
   if (adminApp) return adminApp;
-  const sdk = loadAdminSdk();
-  if (sdk.app.getApps().length > 0) {
-    adminApp = sdk.app.getApps()[0]!;
+  if (getApps().length > 0) {
+    adminApp = getApps()[0]!;
     return adminApp;
   }
   const privateKey = getPrivateKey();
@@ -94,8 +69,8 @@ export function getAdminApp() {
     );
   }
   try {
-    adminApp = sdk.app.initializeApp({
-      credential: sdk.app.cert({
+    adminApp = initializeApp({
+      credential: cert({
         projectId: getFirebaseAdminProjectId(),
         clientEmail: getFirebaseAdminClientEmail(),
         privateKey,
@@ -120,13 +95,11 @@ export function getAdminApp() {
 }
 
 export function getAdminAuth(): Auth {
-  const sdk = loadAdminSdk();
-  return sdk.auth.getAuth(getAdminApp());
+  return getAuth(getAdminApp());
 }
 
 export function getAdminDb(): Firestore {
-  const sdk = loadAdminSdk();
-  return sdk.firestore.getFirestore(getAdminApp());
+  return getFirestore(getAdminApp());
 }
 
 export function tryGetAdminDb() {
