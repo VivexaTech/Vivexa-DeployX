@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { readEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env.server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { collections } from "@/lib/firebase/collections";
 import { handleRouteError, json } from "@/lib/http";

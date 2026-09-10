@@ -1,4 +1,4 @@
-import { readEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 
 export function assertCronAccess(request: Request) {

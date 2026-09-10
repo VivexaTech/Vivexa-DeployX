@@ -16,6 +16,9 @@ function mapUnknownError(error: unknown) {
   if (/reserved|not allowed|already in use|valid domain/i.test(message)) {
     return new AppError("VALIDATION", message, 400);
   }
+  if (/id-token|session-cookie|argument.*idToken|Decoding Firebase/i.test(message)) {
+    return new AppError("UNAUTHENTICATED", "Google sign-in expired. Please try again.", 401);
+  }
   if (/FAILED_PRECONDITION|requires an index/i.test(message)) {
     return new AppError(
       "FIREBASE_ERROR",

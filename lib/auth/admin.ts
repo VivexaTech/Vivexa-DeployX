@@ -1,4 +1,4 @@
-import { getAdminUids } from "@/lib/env";
+import { getAdminUids } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 import type { SessionUser } from "@/lib/auth/session";
 

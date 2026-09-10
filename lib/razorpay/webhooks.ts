@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { readEnv, requireServerEnv } from "@/lib/env";
+import { readEnv, requireServerEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 
 export function verifyRazorpayWebhook(rawBody: string, signature: string | null) {

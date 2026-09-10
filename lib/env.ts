@@ -1,9 +1,3 @@
-import { AppError } from "@/lib/errors";
-
-export function readEnv(name: string, fallback = "") {
-  return (process.env[name] ?? fallback).trim();
-}
-
 function publicEnv(value: string | undefined) {
   return (value ?? "").trim();
 }
@@ -16,18 +10,6 @@ function withProtocol(url: string) {
     return `http://${trimmed}`;
   }
   return `https://${trimmed}`;
-}
-
-export function getAppUrl() {
-  const raw =
-    readEnv("APP_URL") ||
-    publicEnv(process.env.NEXT_PUBLIC_APP_URL) ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-  return withProtocol(raw);
-}
-
-export function getMainDomain() {
-  return readEnv("MAIN_DOMAIN") || publicEnv(process.env.NEXT_PUBLIC_MAIN_DOMAIN) || "vivexatech.in";
 }
 
 export function getPublicFirebaseConfig() {
@@ -43,36 +25,25 @@ export function getPublicFirebaseConfig() {
 
 export function isPublicFirebaseConfigured() {
   const config = getPublicFirebaseConfig();
-  return Boolean(config.apiKey && config.projectId && config.appId);
+  return Boolean(config.apiKey && config.authDomain && config.projectId && config.appId);
 }
 
-export function isAdminSdkConfigured() {
-  return Boolean(
-    readEnv("FIREBASE_ADMIN_PROJECT_ID") &&
-      readEnv("FIREBASE_ADMIN_CLIENT_EMAIL") &&
-      readEnv("FIREBASE_ADMIN_PRIVATE_KEY"),
-  );
-}
-
-export function getAdminUids() {
-  return readEnv("ADMIN_UIDS")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-export function requireServerEnv(keys: string[]) {
-  const missing = keys.filter((key) => !readEnv(key));
-  if (missing.length > 0) {
-    throw new AppError(
-      "CONFIG_MISSING",
-      `This feature is not configured yet. Missing: ${missing.join(", ")}`,
-      503,
-      { missing },
-    );
+export function getAppUrl() {
+  if (process.env.NODE_ENV !== "production") {
+    const port = publicEnv(process.env.PORT) || "3000";
+    return `http://localhost:${port}`;
   }
+  const raw =
+    publicEnv(process.env.APP_URL) ||
+    publicEnv(process.env.NEXT_PUBLIC_APP_URL) ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  return withProtocol(raw);
+}
+
+export function getMainDomain() {
+  return publicEnv(process.env.MAIN_DOMAIN) || publicEnv(process.env.NEXT_PUBLIC_MAIN_DOMAIN) || "vivexatech.in";
 }
 
 export function getRazorpayPublicKey() {
-  return publicEnv(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) || readEnv("RAZORPAY_KEY_ID");
+  return publicEnv(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) || publicEnv(process.env.RAZORPAY_KEY_ID);
 }

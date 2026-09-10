@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "@/config/constants";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { collections } from "@/lib/firebase/collections";
@@ -13,22 +14,48 @@ export type SessionUser = {
   picture: string | null;
 };
 
-export async function createSessionCookie(idToken: string) {
+export function sessionCookieOptions(secure = process.env.NODE_ENV === "production") {
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: SESSION_MAX_AGE_MS / 1000,
+  };
+}
+
+function cookieSecureFromRequest(request?: Request) {
+  if (!request) return process.env.NODE_ENV === "production";
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) return forwarded.split(",")[0]?.trim() === "https";
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return process.env.NODE_ENV === "production";
+  }
+}
+
+export async function createSession(idToken: string) {
   const auth = getAdminAuth();
   const decoded = await auth.verifyIdToken(idToken);
   const sessionCookie = await auth.createSessionCookie(idToken, {
     expiresIn: SESSION_MAX_AGE_MS,
   });
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, sessionCookie, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_MS / 1000,
+  const profile = await upsertUserFromDecoded(decoded);
+  return { decoded, sessionCookie, profile };
+}
+
+export function applySessionCookie(response: NextResponse, sessionCookie: string, request?: Request) {
+  response.cookies.set(SESSION_COOKIE_NAME, sessionCookie, sessionCookieOptions(cookieSecureFromRequest(request)));
+  return response;
+}
+
+export function clearSessionFromResponse(response: NextResponse, request?: Request) {
+  response.cookies.set(SESSION_COOKIE_NAME, "", {
+    ...sessionCookieOptions(cookieSecureFromRequest(request)),
+    maxAge: 0,
   });
-  await upsertUserFromDecoded(decoded);
-  return decoded;
+  return response;
 }
 
 export async function clearSessionCookie() {
@@ -86,9 +113,9 @@ export async function verifyRequestUser(request: Request) {
 
 type DecodedLike = {
   uid: string;
-  email?: string;
-  name?: string;
-  picture?: string;
+  email?: string | null;
+  name?: string | null;
+  picture?: string | null;
 };
 
 export async function upsertUserFromDecoded(decoded: DecodedLike) {
@@ -126,5 +153,5 @@ export async function upsertUserFromDecoded(decoded: DecodedLike) {
     },
     { merge: true },
   );
-  return { uid: decoded.uid, ...(snap.data() ?? {}) } as UserProfile;
+  return { uid: decoded.uid, ...(snap.data() ?? {}), updatedAt: timestamp } as UserProfile;
 }

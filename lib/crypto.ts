@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "crypto";
-import { readEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 
 function getKey() {

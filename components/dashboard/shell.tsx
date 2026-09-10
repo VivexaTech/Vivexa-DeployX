@@ -42,14 +42,25 @@ const nav = [
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [query, setQuery] = useState("");
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, router, user]);
+    let active = true;
+    apiFetch("/api/me")
+      .then(() => {
+        if (active) setAllowed(true);
+      })
+      .catch(() => {
+        if (active) router.replace("/login");
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   useEffect(() => {
     apiFetch<{ unread: number }>("/api/notifications")
@@ -95,6 +106,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     </aside>
   );
 
+  if (!allowed) {
+    return (
+      <div className="grid min-h-screen place-items-center">
+        <p className="text-sm text-muted">Loading your workspace…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-bg lg:grid lg:grid-cols-[18rem_1fr]">
       <div className="hidden lg:block">{sidebar}</div>
@@ -127,7 +146,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <ThemeToggle compact />
           <div className="flex items-center gap-2">
             <span className="hidden text-sm sm:inline">{user?.displayName ?? "Account"}</span>
-            <Button variant="ghost" size="sm" onClick={() => logout().then(() => router.push("/"))}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                logout().then(() => {
+                  router.replace("/");
+                  router.refresh();
+                })
+              }
+            >
               Sign out
             </Button>
           </div>

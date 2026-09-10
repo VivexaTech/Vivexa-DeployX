@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import { readEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env.server";
 import { logger } from "@/lib/logger";
 
 let resend: Resend | null = null;

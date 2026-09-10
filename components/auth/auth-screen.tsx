@@ -1,25 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/auth-provider";
+import { apiFetch } from "@/lib/api/client";
+import { googleSignInErrorMessage, isGoogleSignInCancelled } from "@/lib/auth/google-errors";
 
 export function AuthScreen({ mode }: { mode: "login" | "signup" }) {
-  const { signInWithGoogle, configured, redirectError } = useAuth();
+  const { signInWithGoogle, configured, loading: authLoading, user } = useAuth();
+  const router = useRouter();
+  const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  function destination() {
+    const next = params.get("next");
+    if (next && next.startsWith("/")) return next;
+    const plan = params.get("plan");
+    if (plan) return `/dashboard/billing?plan=${encodeURIComponent(plan)}`;
+    return "/dashboard";
+  }
+
+  useEffect(() => {
+    if (authLoading) return;
+    apiFetch("/api/me")
+      .then(() => {
+        router.replace(destination());
+        router.refresh();
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   async function onGoogle() {
     setError(null);
     setLoading(true);
     try {
       await signInWithGoogle();
+      router.replace(destination());
+      router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed.");
+      if (!isGoogleSignInCancelled(err)) {
+        setError(googleSignInErrorMessage(err));
+      }
+    } finally {
       setLoading(false);
     }
   }
@@ -47,11 +76,11 @@ export function AuthScreen({ mode }: { mode: "login" | "signup" }) {
           <Card className="p-6">
             <h2 className="text-2xl font-semibold">{mode === "login" ? "Welcome back" : "Create your account"}</h2>
             <p className="mt-2 text-sm text-muted">
-              {mode === "login" ? "Sign in with Google to open your dashboard." : "Get started with Google authentication."}
+              {mode === "login"
+                ? "Sign in with Google to open your dashboard."
+                : "Get started with Google authentication."}
             </p>
-            {error || redirectError ? (
-              <p className="mt-4 text-sm text-danger">{error || redirectError}</p>
-            ) : null}
+            {error ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
             <Button className="mt-6 w-full" onClick={onGoogle} disabled={!configured || loading}>
               {loading ? "Connecting..." : "Continue with Google"}
             </Button>

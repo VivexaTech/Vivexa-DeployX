@@ -1,4 +1,4 @@
-import { readEnv, requireServerEnv } from "@/lib/env";
+import { readEnv, requireServerEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 

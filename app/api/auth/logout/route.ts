@@ -1,12 +1,11 @@
-import { clearSessionCookie } from "@/lib/auth/session";
+import { clearSessionFromResponse } from "@/lib/auth/session";
 import { handleRouteError, json } from "@/lib/http";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    await clearSessionCookie();
-    return json({ ok: true });
+    return clearSessionFromResponse(json({ ok: true }), request);
   } catch (error) {
     return handleRouteError(error, "auth.logout");
   }

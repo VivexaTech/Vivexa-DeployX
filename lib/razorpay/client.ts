@@ -1,5 +1,5 @@
 import Razorpay from "razorpay";
-import { readEnv, requireServerEnv } from "@/lib/env";
+import { readEnv, requireServerEnv } from "@/lib/env.server";
 
 let client: Razorpay | null = null;
 

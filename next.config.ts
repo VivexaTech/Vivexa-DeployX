@@ -5,13 +5,13 @@ const nextConfig: NextConfig = {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },
   async headers() {
+    const authHeaders = [
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      { key: "Cross-Origin-Embedder-Policy", value: "unsafe-none" },
+    ];
     return [
-      {
-        source: "/:path*",
-        headers: [
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-        ],
-      },
+      { source: "/", headers: authHeaders },
+      { source: "/:path*", headers: authHeaders },
     ];
   },
 };

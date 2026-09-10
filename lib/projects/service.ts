@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { HOSTED_PROJECT_STATUSES } from "@/config/constants";
-import { getAppUrl, getMainDomain, readEnv } from "@/lib/env";
+import { getAppUrl, getMainDomain, readEnv } from "@/lib/env.server";
 import { assertSubscriptionEligible, canDeploy, canUseAutoDeploy, canUseCustomDomain, canUseEnvVars, assertMonthlyDeploymentQuota } from "@/lib/entitlements";
 import { AppError } from "@/lib/errors";
 import { getAdminDb } from "@/lib/firebase/admin";

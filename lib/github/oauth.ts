@@ -1,4 +1,4 @@
-import { getAppUrl, readEnv, requireServerEnv } from "@/lib/env";
+import { getAppUrl, readEnv, requireServerEnv } from "@/lib/env.server";
 import { AppError } from "@/lib/errors";
 import { signValue, verifySignedValue } from "@/lib/crypto";
 
