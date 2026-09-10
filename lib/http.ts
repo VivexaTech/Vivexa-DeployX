@@ -16,6 +16,16 @@ function mapUnknownError(error: unknown) {
   if (/reserved|not allowed|already in use|valid domain/i.test(message)) {
     return new AppError("VALIDATION", message, 400);
   }
+  if (/FAILED_PRECONDITION|requires an index/i.test(message)) {
+    return new AppError(
+      "FIREBASE_ERROR",
+      "Firestore needs an index for this query. Dashboard data will load without that query until the index is ready.",
+      503,
+    );
+  }
+  if (/odd number of components|must point to a collection/i.test(message)) {
+    return new AppError("FIREBASE_ERROR", "Invalid Firestore path. Please retry after the latest update.", 500);
+  }
   if (/5 NOT_FOUND|NOT_FOUND:|code.?5\b/i.test(message)) {
     return new AppError(
       "FIREBASE_ERROR",

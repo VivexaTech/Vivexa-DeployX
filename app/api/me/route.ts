@@ -13,9 +13,9 @@ export async function GET(request: Request) {
     const [plan, usage, github, projects, deployments] = await Promise.all([
       getUserPlan(user),
       getCurrentUsage(session.uid),
-      getGithubConnection(session.uid),
-      listUserProjects(session.uid),
-      listRecentDeployments(session.uid, 30),
+      getGithubConnection(session.uid).catch(() => null),
+      listUserProjects(session.uid).catch(() => []),
+      listRecentDeployments(session.uid, 30).catch(() => []),
     ]);
     return json({
       user: { ...user, websiteCount: usage },

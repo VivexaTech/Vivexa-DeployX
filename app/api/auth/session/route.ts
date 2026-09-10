@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const body = await readJson<{ idToken?: string }>(request);
     const { idToken } = z.object({ idToken: z.string().min(20) }).parse(body);
     const decoded = await createSessionCookie(idToken);
-    await enforceRateLimit(decoded.uid, "auth");
+    await enforceRateLimit(decoded.uid, "auth").catch(() => undefined);
     return json({ ok: true, uid: decoded.uid });
   } catch (error) {
     return handleRouteError(error, "auth.session");

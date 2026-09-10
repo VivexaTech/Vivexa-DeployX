@@ -63,7 +63,7 @@ export function ProjectsSection() {
             ? (
               <Card className="p-6 md:col-span-3">
                 <p className="text-sm text-muted">
-                  Showcase projects will appear here once they are added to <code>about/projects</code>.
+                  Showcase projects will appear here once they are added to <code>about/content/projects</code>.
                 </p>
               </Card>
             )

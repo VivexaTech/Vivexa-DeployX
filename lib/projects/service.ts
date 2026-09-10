@@ -517,17 +517,32 @@ export async function deleteUserProject(uid: string, projectId: string) {
 
 export async function listUserProjects(uid: string) {
   const db = getAdminDb();
-  const snap = await db.collection(userProjectsPath(uid)).orderBy("createdAt", "desc").get();
-  return snap.docs.map((doc) => doc.data() as Project);
+  try {
+    const snap = await db.collection(userProjectsPath(uid)).orderBy("createdAt", "desc").get();
+    return snap.docs.map((doc) => doc.data() as Project);
+  } catch {
+    const snap = await db.collection(userProjectsPath(uid)).get();
+    return snap.docs
+      .map((doc) => doc.data() as Project)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
 }
 
 export async function listRecentDeployments(uid: string, limit = 8) {
+  const projects = await listUserProjects(uid).catch(() => [] as Project[]);
   const db = getAdminDb();
-  const snap = await db
-    .collectionGroup(collections.deployments)
-    .where("userId", "==", uid)
-    .orderBy("createdAt", "desc")
-    .limit(limit)
-    .get();
-  return snap.docs.map((doc) => doc.data() as Deployment);
+  const batches = await Promise.all(
+    projects.slice(0, 25).map(async (project) => {
+      const snap = await db
+        .collection(userDeploymentsPath(uid, project.projectId))
+        .orderBy("createdAt", "desc")
+        .limit(limit)
+        .get();
+      return snap.docs.map((doc) => doc.data() as Deployment);
+    }),
+  );
+  return batches
+    .flat()
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, limit);
 }

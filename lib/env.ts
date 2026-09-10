@@ -8,12 +8,22 @@ function publicEnv(value: string | undefined) {
   return (value ?? "").trim();
 }
 
+function withProtocol(url: string) {
+  const trimmed = url.replace(/\/$/, "");
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1")) {
+    return `http://${trimmed}`;
+  }
+  return `https://${trimmed}`;
+}
+
 export function getAppUrl() {
-  return (
+  const raw =
     readEnv("APP_URL") ||
     publicEnv(process.env.NEXT_PUBLIC_APP_URL) ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-  ).replace(/\/$/, "");
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  return withProtocol(raw);
 }
 
 export function getMainDomain() {

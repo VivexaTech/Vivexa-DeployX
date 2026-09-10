@@ -55,5 +55,5 @@ export function pricingPlansPath() {
 }
 
 export function showcaseProjectsPath() {
-  return `${collections.about}/projects`;
+  return `${collections.about}/content/projects`;
 }

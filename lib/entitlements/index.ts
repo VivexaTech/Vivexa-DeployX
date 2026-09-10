@@ -165,17 +165,21 @@ export async function assertMonthlyDeploymentQuota(uid: string, plan: PricingPla
   const start = new Date();
   start.setUTCDate(1);
   start.setUTCHours(0, 0, 0, 0);
-  const snap = await db
-    .collectionGroup(collections.deployments)
-    .where("userId", "==", uid)
-    .where("createdAt", ">=", start.toISOString())
-    .get();
-  if (snap.size >= plan.features.maxDeploymentsPerMonth) {
+  const projects = await db.collection(userProjectsPath(uid)).get();
+  let used = 0;
+  for (const project of projects.docs) {
+    const snap = await db
+      .collection(`${userProjectsPath(uid)}/${project.id}/${collections.deployments}`)
+      .where("createdAt", ">=", start.toISOString())
+      .get();
+    used += snap.size;
+  }
+  if (used >= plan.features.maxDeploymentsPerMonth) {
     throw new AppError(
       "PLAN_LIMIT",
       "You have reached this month's deployment limit for your plan.",
       403,
-      { used: snap.size, limit: plan.features.maxDeploymentsPerMonth },
+      { used, limit: plan.features.maxDeploymentsPerMonth },
     );
   }
 }

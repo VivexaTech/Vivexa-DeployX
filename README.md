@@ -103,7 +103,7 @@ npm run seed
 | `about/company` | About copy |
 | `about/reservedSubdomains` | Extra reserved names |
 | `about/pricing/plans/{planId}` | Dynamic plans |
-| `about/projects/{id}` | Public showcase |
+| `about/content/projects/{id}` | Public showcase |
 
 Users cannot write subscription, payment, Vercel, or invoice fields from the client. Those updates go through Admin SDK routes.
 

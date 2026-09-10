@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -10,22 +9,17 @@ import { Card } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/auth-provider";
 
 export function AuthScreen({ mode }: { mode: "login" | "signup" }) {
-  const { signInWithGoogle, configured } = useAuth();
-  const router = useRouter();
-  const params = useSearchParams();
+  const { signInWithGoogle, configured, redirectError } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const plan = params.get("plan");
 
   async function onGoogle() {
     setError(null);
     setLoading(true);
     try {
       await signInWithGoogle();
-      router.push(plan ? `/dashboard/billing?plan=${plan}` : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed.");
-    } finally {
       setLoading(false);
     }
   }
@@ -55,7 +49,9 @@ export function AuthScreen({ mode }: { mode: "login" | "signup" }) {
             <p className="mt-2 text-sm text-muted">
               {mode === "login" ? "Sign in with Google to open your dashboard." : "Get started with Google authentication."}
             </p>
-            {error ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
+            {error || redirectError ? (
+              <p className="mt-4 text-sm text-danger">{error || redirectError}</p>
+            ) : null}
             <Button className="mt-6 w-full" onClick={onGoogle} disabled={!configured || loading}>
               {loading ? "Connecting..." : "Continue with Google"}
             </Button>

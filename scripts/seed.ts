@@ -42,7 +42,7 @@ async function main() {
   }
   for (const project of seed.projects) {
     const id = project.id ?? `project-${Date.now()}`;
-    await db.doc(`about/projects/${id}`).set({ ...project, createdAt: new Date().toISOString() }, { merge: true });
+    await db.doc(`about/content/projects/${id}`).set({ ...project, createdAt: new Date().toISOString() }, { merge: true });
   }
   console.log("Seed complete. Replace placeholder pricing and support values before going live.");
 }
