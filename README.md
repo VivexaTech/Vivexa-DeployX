@@ -77,7 +77,7 @@ Deploy rules and indexes:
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-Optional seed (placeholders only — replace real pricing and support yourself):
+Seed the live pricing catalog (`about/pricing/plans/{starter,business,enterprise}`):
 
 ```bash
 npm run seed

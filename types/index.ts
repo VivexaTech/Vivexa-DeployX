@@ -42,8 +42,12 @@ export type NotificationType =
   | "system";
 
 export type PlanFeatures = {
-  customDomains: boolean;
+  freeSubdomain: boolean;
+  customDomain: boolean;
+  staticWebsite: boolean;
+  dynamicWebsite: boolean;
   githubDeployment: boolean;
+  customDomains: boolean;
   environmentVariables: boolean;
   automaticDeployments: boolean;
   teamMembers: number;
@@ -101,6 +105,7 @@ export type Project = {
   repo: string;
   branch: string;
   framework: string | null;
+  websiteKind?: "static" | "dynamic";
   vercelProjectId: string | null;
   vercelProjectName: string | null;
   latestDeploymentId: string | null;

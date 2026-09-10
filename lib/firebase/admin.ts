@@ -1,6 +1,6 @@
-import type { App } from "firebase-admin/app";
-import type { Auth } from "firebase-admin/auth";
-import type { Firestore } from "firebase-admin/firestore";
+import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getAuth, type Auth } from "firebase-admin/auth";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import {
   getFirebaseAdminClientEmail,
   getFirebaseAdminProjectId,
@@ -10,44 +10,7 @@ import {
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
-type AdminNamespace = {
-  apps: Array<App | null>;
-  initializeApp: (options: {
-    credential: unknown;
-    projectId?: string;
-  }) => App;
-  credential: {
-    cert: (serviceAccount: { projectId: string; clientEmail: string; privateKey: string }) => unknown;
-  };
-  auth: (app?: App) => Auth;
-  firestore: (app?: App) => Firestore;
-};
-
 let adminApp: App | null = null;
-let adminNs: AdminNamespace | null = null;
-
-function loadAdminNamespace(): AdminNamespace {
-  if (adminNs) return adminNs;
-  try {
-    // Use the CJS main entry. Subpath imports (firebase-admin/app) crash Vercel
-    // functions at module-evaluation time with an empty HTTP 500.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const loaded = require("firebase-admin") as AdminNamespace & { default?: AdminNamespace };
-    adminNs = loaded.credential ? loaded : loaded.default!;
-    return adminNs;
-  } catch (error) {
-    logger.error("firebase-admin module failed to load", {
-      name: error instanceof Error ? error.name : "unknown",
-      message: error instanceof Error ? error.message : "unknown",
-      node: process.versions.node,
-    });
-    throw new AppError(
-      "FIREBASE_ERROR",
-      "Authentication service temporarily unavailable",
-      500,
-    );
-  }
-}
 
 function decodeMaybeBase64(value: string) {
   const compact = value.replace(/\s+/g, "");
@@ -69,10 +32,7 @@ function getPrivateKey() {
       ? Buffer.from(readEnv("FIREBASE_ADMIN_PRIVATE_KEY_BASE64"), "base64").toString("utf8")
       : "");
   let key = decodeMaybeBase64(raw);
-  if (
-    (key.startsWith('"') && key.endsWith('"')) ||
-    (key.startsWith("'") && key.endsWith("'"))
-  ) {
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
     key = key.slice(1, -1);
   }
   return key.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
@@ -93,9 +53,9 @@ export function getAdminApp() {
     );
   }
   if (adminApp) return adminApp;
-  const admin = loadAdminNamespace();
-  if (admin.apps.length > 0) {
-    adminApp = admin.apps[0] as App;
+  const existing = getApps();
+  if (existing.length > 0) {
+    adminApp = existing[0] as App;
     return adminApp;
   }
   const privateKey = getPrivateKey();
@@ -107,14 +67,14 @@ export function getAdminApp() {
     );
   }
   try {
-    adminApp = admin.initializeApp({
-      credential: admin.credential.cert({
+    adminApp = initializeApp({
+      credential: cert({
         projectId: getFirebaseAdminProjectId(),
         clientEmail: getFirebaseAdminClientEmail(),
         privateKey,
       }),
       projectId: getFirebaseAdminProjectId(),
-    }) as App;
+    });
     logger.info("Firebase Admin initialized", {
       projectId: getFirebaseAdminProjectId(),
       node: process.versions.node,
@@ -134,13 +94,11 @@ export function getAdminApp() {
 }
 
 export function getAdminAuth(): Auth {
-  getAdminApp();
-  return loadAdminNamespace().auth();
+  return getAuth(getAdminApp());
 }
 
 export function getAdminDb(): Firestore {
-  getAdminApp();
-  return loadAdminNamespace().firestore();
+  return getFirestore(getAdminApp());
 }
 
 export function tryGetAdminDb() {

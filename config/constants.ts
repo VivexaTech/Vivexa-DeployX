@@ -49,8 +49,12 @@ export const DEPLOYABLE_SUBSCRIPTION_STATUSES = [
 ] as const;
 
 export const DEFAULT_PLAN_FEATURES = {
-  customDomains: false,
+  freeSubdomain: true,
+  customDomain: false,
+  staticWebsite: true,
+  dynamicWebsite: false,
   githubDeployment: true,
+  customDomains: false,
   environmentVariables: true,
   automaticDeployments: false,
   teamMembers: 1,

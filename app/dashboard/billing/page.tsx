@@ -17,6 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 function BillingInner() {
   const params = useSearchParams();
   const { data, refresh, loading } = useDashboardData();
+  const selectedPlanId = params.get("plan");
   const { plans } = usePublicContent();
   const { push } = useToast();
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -88,10 +89,16 @@ function BillingInner() {
       </Card>
       <div className="grid gap-4 md:grid-cols-3">
         {plans.map((plan) => (
-          <Card key={plan.id} className="p-5">
+          <Card key={plan.id} className={`p-5 ${selectedPlanId === plan.id || data.user.activePlanId === plan.id ? "ring-2 ring-accent" : ""}`}>
+            <p className="text-sm capitalize text-muted">{plan.duration}</p>
             <h3 className="text-xl font-semibold">{plan.planName}</h3>
             <p className="mt-2 text-2xl">{formatCurrency(plan.planPrice, plan.currency)}</p>
             <p className="text-sm text-muted">{plan.maxWebsites} websites</p>
+            <ul className="mt-4 space-y-1 text-sm text-muted">
+              {plan.keyPoints.map((point) => (
+                <li key={point}>• {point}</li>
+              ))}
+            </ul>
             <Button className="mt-4 w-full" disabled={busy} onClick={() => void subscribe(plan.id)}>
               {data.user.activePlanId === plan.id ? "Current plan" : "Choose plan"}
             </Button>

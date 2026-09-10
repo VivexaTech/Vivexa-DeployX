@@ -21,25 +21,83 @@
     {
       "id": "starter",
       "planName": "Starter",
-      "planPrice": 0,
+      "planPrice": 1299,
       "currency": "INR",
-      "keyPoints": ["Replace these values in Firestore", "Set razorpayPlanId before selling"],
-      "maxWebsites": 3,
-      "duration": "monthly",
-      "billingCycle": "monthly",
-      "razorpayPlanId": "REPLACE_WITH_RAZORPAY_PLAN_ID",
-      "active": false,
-      "displayOrder": 1,
-      "gracePeriodDays": 3,
+      "duration": "yearly",
+      "billingCycle": "yearly",
+      "maxWebsites": 1,
+      "keyPoints": [
+        "1 Website",
+        "Free Vivexa subdomain",
+        "Fast speed performance",
+        "Static websites only",
+        "GitHub deployment"
+      ],
       "features": {
-        "customDomains": false,
-        "githubDeployment": true,
-        "environmentVariables": true,
-        "automaticDeployments": false,
-        "teamMembers": 1,
-        "maxDeploymentsPerMonth": null,
-        "supportLevel": "standard"
-      }
+        "freeSubdomain": true,
+        "customDomain": true,
+        "staticWebsite": true,
+        "dynamicWebsite": false,
+        "githubDeployment": true
+      },
+      "razorpayPlanId": "",
+      "active": true,
+      "displayOrder": 1,
+      "gracePeriodDays": 3
+    },
+    {
+      "id": "business",
+      "planName": "Business",
+      "planPrice": 4499,
+      "currency": "INR",
+      "duration": "yearly",
+      "billingCycle": "yearly",
+      "maxWebsites": 3,
+      "keyPoints": [
+        "3 Websites",
+        "Free Vivexa subdomain",
+        "Fast speed performance",
+        "Static & dynamic websites",
+        "GitHub deployment"
+      ],
+      "features": {
+        "freeSubdomain": true,
+        "customDomain": true,
+        "staticWebsite": true,
+        "dynamicWebsite": true,
+        "githubDeployment": true
+      },
+      "razorpayPlanId": "",
+      "active": true,
+      "displayOrder": 2,
+      "gracePeriodDays": 3
+    },
+    {
+      "id": "enterprise",
+      "planName": "Enterprise",
+      "planPrice": 12999,
+      "currency": "INR",
+      "duration": "yearly",
+      "billingCycle": "yearly",
+      "maxWebsites": 20,
+      "keyPoints": [
+        "20 Websites",
+        "Free Vivexa subdomain",
+        "Fast speed performance",
+        "Static & dynamic websites",
+        "GitHub deployment"
+      ],
+      "features": {
+        "freeSubdomain": true,
+        "customDomain": true,
+        "staticWebsite": true,
+        "dynamicWebsite": true,
+        "githubDeployment": true
+      },
+      "razorpayPlanId": "",
+      "active": true,
+      "displayOrder": 3,
+      "gracePeriodDays": 3
     }
   ],
   "projects": []

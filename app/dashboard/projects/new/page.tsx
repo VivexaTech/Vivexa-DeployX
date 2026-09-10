@@ -28,6 +28,7 @@ export default function NewProjectPage() {
     branch: "main",
     name: "",
     framework: "",
+    websiteKind: "static" as "static" | "dynamic",
     platformSubdomain: "",
     envText: "",
     autoDeploy: false,
@@ -39,6 +40,12 @@ export default function NewProjectPage() {
       .catch((error) => push({ title: error.message, tone: "danger" }))
       .finally(() => setLoadingRepos(false));
   }, [push]);
+
+  useEffect(() => {
+    if (data?.plan && !data.plan.features.dynamicWebsite && form.websiteKind === "dynamic") {
+      setForm((current) => ({ ...current, websiteKind: "static" }));
+    }
+  }, [data?.plan, form.websiteKind]);
 
   async function onSelectRepo(fullName: string) {
     const selected = repos.find((item) => item.fullName === fullName);
@@ -83,6 +90,7 @@ export default function NewProjectPage() {
           repo: form.repo,
           branch: form.branch,
           framework: form.framework || null,
+          websiteKind: form.websiteKind,
           platformSubdomain: form.platformSubdomain || null,
           autoDeploy: form.autoDeploy,
           envVars,
@@ -158,11 +166,32 @@ export default function NewProjectPage() {
             />
           </div>
           <div>
+            <Label htmlFor="kind">Website type</Label>
+            <select
+              id="kind"
+              className="h-11 w-full rounded-xl border border-line bg-bg-elevated px-3 text-sm"
+              value={form.websiteKind}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  websiteKind: event.target.value === "dynamic" ? "dynamic" : "static",
+                }))
+              }
+            >
+              {data?.plan?.features.staticWebsite !== false ? <option value="static">Static website</option> : null}
+              {data?.plan?.features.dynamicWebsite ? <option value="dynamic">Dynamic website</option> : null}
+            </select>
+            {data?.plan && !data.plan.features.dynamicWebsite ? (
+              <p className="mt-1 text-xs text-muted">Dynamic websites are not included in your current plan.</p>
+            ) : null}
+          </div>
+          <div>
             <Label htmlFor="subdomain">Platform subdomain (optional)</Label>
             <Input
               id="subdomain"
               placeholder="myportfolio"
               value={form.platformSubdomain}
+              disabled={data?.plan ? !data.plan.features.freeSubdomain : false}
               onChange={(event) => setForm((current) => ({ ...current, platformSubdomain: event.target.value }))}
             />
           </div>

@@ -36,7 +36,11 @@ export async function GET(request: Request) {
       listRecentDeployments(session.uid, 30).catch(() => []),
     ]);
     return json({
-      user: { ...user, websiteCount: usage },
+      user: {
+        ...user,
+        websiteCount: usage,
+        websiteLimit: plan ? plan.maxWebsites : user.websiteLimit,
+      },
       plan,
       github,
       projects,

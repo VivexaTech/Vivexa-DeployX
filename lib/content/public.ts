@@ -1,32 +1,11 @@
-import { DEFAULT_PLAN_FEATURES } from "@/config/constants";
+import { listPlansFromFirestoreRest, getPlanFromFirestoreRest } from "@/lib/content/firestore-rest";
+import { mapPricingPlan, sortPricingPlans } from "@/lib/content/plans";
 import { defaultCompany } from "@/lib/content/defaults";
 import { tryGetAdminDb } from "@/lib/firebase/admin";
 import { aboutDocs, collections, pricingPlansPath, showcaseProjectsPath } from "@/lib/firebase/collections";
 import type { CompanyContent, PricingPlan, ShowcaseProject, SupportContent } from "@/types";
 
 export { defaultCompany };
-
-function mapPlan(id: string, data: Record<string, unknown>): PricingPlan {
-  const features = {
-    ...DEFAULT_PLAN_FEATURES,
-    ...((data.features as object) ?? {}),
-  };
-  return {
-    id,
-    planName: String(data.planName ?? "Plan"),
-    planPrice: Number(data.planPrice ?? 0),
-    currency: String(data.currency ?? "INR"),
-    keyPoints: Array.isArray(data.keyPoints) ? data.keyPoints.map(String) : [],
-    maxWebsites: Number(data.maxWebsites ?? 0),
-    duration: String(data.duration ?? "monthly"),
-    billingCycle: data.billingCycle === "yearly" ? "yearly" : "monthly",
-    razorpayPlanId: String(data.razorpayPlanId ?? ""),
-    active: data.active !== false,
-    displayOrder: Number(data.displayOrder ?? 0),
-    features,
-    gracePeriodDays: Number(data.gracePeriodDays ?? 3),
-  };
-}
 
 export async function getSupportContent(): Promise<SupportContent | null> {
   const db = tryGetAdminDb();
@@ -50,19 +29,32 @@ export async function getCompanyContent(): Promise<CompanyContent> {
 
 export async function getActivePlans(): Promise<PricingPlan[]> {
   const db = tryGetAdminDb();
-  if (!db) return [];
-  const snap = await db.collection(pricingPlansPath()).where("active", "==", true).get();
-  return snap.docs
-    .map((doc) => mapPlan(doc.id, doc.data()))
-    .sort((a, b) => a.displayOrder - b.displayOrder);
+  if (db) {
+    try {
+      const snap = await db.collection(pricingPlansPath()).get();
+      return sortPricingPlans(
+        snap.docs
+          .map((doc) => mapPricingPlan(doc.id, doc.data()))
+          .filter((plan) => plan.active),
+      );
+    } catch {
+      // Fall through to the public Firestore REST catalog.
+    }
+  }
+  return listPlansFromFirestoreRest();
 }
 
 export async function getPlanById(planId: string): Promise<PricingPlan | null> {
   const db = tryGetAdminDb();
-  if (!db) return null;
-  const snap = await db.collection(pricingPlansPath()).doc(planId).get();
-  if (!snap.exists) return null;
-  return mapPlan(snap.id, snap.data() ?? {});
+  if (db) {
+    try {
+      const snap = await db.collection(pricingPlansPath()).doc(planId).get();
+      if (snap.exists) return mapPricingPlan(snap.id, snap.data() ?? {});
+    } catch {
+      // Fall through to the public Firestore REST catalog.
+    }
+  }
+  return getPlanFromFirestoreRest(planId);
 }
 
 export async function getShowcaseProjects(): Promise<ShowcaseProject[]> {

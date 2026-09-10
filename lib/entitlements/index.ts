@@ -31,7 +31,7 @@ export async function getCurrentUsage(uid: string) {
 }
 
 export function getWebsiteLimit(user: UserProfile, plan?: PricingPlan | null) {
-  if (plan) return plan.maxWebsites;
+  if (plan && Number.isFinite(plan.maxWebsites)) return plan.maxWebsites;
   return user.websiteLimit ?? 0;
 }
 
@@ -62,6 +62,9 @@ export async function getUserPlan(user: UserProfile) {
 
 export function hasFeature(plan: PricingPlan | null, feature: keyof PlanFeatures) {
   if (!plan) return false;
+  if (feature === "customDomains" || feature === "customDomain") {
+    return Boolean(plan.features.customDomain || plan.features.customDomains);
+  }
   const value = plan.features[feature];
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value > 0;
@@ -120,12 +123,58 @@ export async function canUseCustomDomain(uid: string) {
       402,
     );
   }
-  if (!plan || !hasFeature(plan, "customDomains")) {
+  if (!plan || !hasFeature(plan, "customDomain")) {
     throw new AppError(
       "PLAN_FEATURE",
       "Custom domains are not included in your current plan. Upgrade to connect your own domain.",
       403,
-      { feature: "customDomains" },
+      { feature: "customDomain" },
+    );
+  }
+  return { user, plan };
+}
+
+export async function canUseFreeSubdomain(uid: string) {
+  const user = await getUserProfile(uid);
+  const plan = await getUserPlan(user);
+  if (!isSubscriptionEligible(user)) {
+    throw new AppError(
+      "SUBSCRIPTION_INACTIVE",
+      "Your subscription is not active. Update billing to use a Vivexa subdomain.",
+      402,
+    );
+  }
+  if (!plan || !hasFeature(plan, "freeSubdomain")) {
+    throw new AppError(
+      "PLAN_FEATURE",
+      "A free Vivexa subdomain is not included in your current plan.",
+      403,
+      { feature: "freeSubdomain" },
+    );
+  }
+  return { user, plan };
+}
+
+export async function assertWebsiteKind(uid: string, kind: "static" | "dynamic") {
+  const user = await getUserProfile(uid);
+  const plan = await getUserPlan(user);
+  if (!plan) {
+    throw new AppError("PLAN_FEATURE", "Choose a plan before deploying a website.", 403, { feature: kind });
+  }
+  if (kind === "dynamic" && !hasFeature(plan, "dynamicWebsite")) {
+    throw new AppError(
+      "PLAN_FEATURE",
+      "Dynamic websites are not included in your current plan. Upgrade to deploy dynamic sites.",
+      403,
+      { feature: "dynamicWebsite" },
+    );
+  }
+  if (kind === "static" && !hasFeature(plan, "staticWebsite")) {
+    throw new AppError(
+      "PLAN_FEATURE",
+      "Static websites are not included in your current plan.",
+      403,
+      { feature: "staticWebsite" },
     );
   }
   return { user, plan };

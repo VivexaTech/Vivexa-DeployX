@@ -26,9 +26,15 @@ export default function AdminPage() {
     planName: "",
     planPrice: 0,
     keyPoints: "",
-    maxWebsites: 3,
-    duration: "monthly",
+    maxWebsites: 1,
+    duration: "yearly",
     razorpayPlanId: "",
+    displayOrder: 1,
+    freeSubdomain: true,
+    customDomain: true,
+    staticWebsite: true,
+    dynamicWebsite: false,
+    githubDeployment: true,
   });
   const [project, setProject] = useState({
     title: "",
@@ -101,19 +107,27 @@ export default function AdminPage() {
         <Input type="number" placeholder="Price" value={plan.planPrice} onChange={(e) => setPlan({ ...plan, planPrice: Number(e.target.value) })} />
         <Input placeholder="Duration" value={plan.duration} onChange={(e) => setPlan({ ...plan, duration: e.target.value })} />
         <Input type="number" placeholder="Max websites" value={plan.maxWebsites} onChange={(e) => setPlan({ ...plan, maxWebsites: Number(e.target.value) })} />
+        <Input type="number" placeholder="Display order" value={plan.displayOrder} onChange={(e) => setPlan({ ...plan, displayOrder: Number(e.target.value) })} />
         <Input placeholder="Razorpay plan ID" value={plan.razorpayPlanId} onChange={(e) => setPlan({ ...plan, razorpayPlanId: e.target.value })} />
         <Textarea placeholder="Key points, one per line" value={plan.keyPoints} onChange={(e) => setPlan({ ...plan, keyPoints: e.target.value })} />
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plan.freeSubdomain} onChange={(e) => setPlan({ ...plan, freeSubdomain: e.target.checked })} /> Free subdomain</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plan.customDomain} onChange={(e) => setPlan({ ...plan, customDomain: e.target.checked })} /> Custom domain</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plan.staticWebsite} onChange={(e) => setPlan({ ...plan, staticWebsite: e.target.checked })} /> Static websites</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plan.dynamicWebsite} onChange={(e) => setPlan({ ...plan, dynamicWebsite: e.target.checked })} /> Dynamic websites</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plan.githubDeployment} onChange={(e) => setPlan({ ...plan, githubDeployment: e.target.checked })} /> GitHub deployment</label>
         <Button
           onClick={() =>
             void save("plan", {
               ...plan,
               keyPoints: plan.keyPoints.split("\n").filter(Boolean),
+              billingCycle: plan.duration.toLowerCase().includes("year") ? "yearly" : "monthly",
               active: true,
               features: {
-                customDomains: true,
-                githubDeployment: true,
-                environmentVariables: true,
-                automaticDeployments: false,
+                freeSubdomain: plan.freeSubdomain,
+                customDomain: plan.customDomain,
+                staticWebsite: plan.staticWebsite,
+                dynamicWebsite: plan.dynamicWebsite,
+                githubDeployment: plan.githubDeployment,
               },
             })
           }

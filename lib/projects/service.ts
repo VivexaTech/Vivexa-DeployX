@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { HOSTED_PROJECT_STATUSES } from "@/config/constants";
 import { getAppUrl, getMainDomain, readEnv } from "@/lib/env.server";
-import { assertSubscriptionEligible, canDeploy, canUseAutoDeploy, canUseCustomDomain, canUseEnvVars, assertMonthlyDeploymentQuota } from "@/lib/entitlements";
+import { assertSubscriptionEligible, assertWebsiteKind, canDeploy, canUseAutoDeploy, canUseCustomDomain, canUseEnvVars, canUseFreeSubdomain, assertMonthlyDeploymentQuota } from "@/lib/entitlements";
 import { AppError } from "@/lib/errors";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { collections, userDeploymentsPath, userDomainsPath, userProjectPath, userProjectsPath } from "@/lib/firebase/collections";
@@ -28,17 +28,23 @@ export async function createAndDeployProject(uid: string, input: {
   repo: string;
   branch: string;
   framework?: string | null;
+  websiteKind?: "static" | "dynamic";
   envVars?: { key: string; value: string }[];
   platformSubdomain?: string | null;
   autoDeploy?: boolean;
 }) {
-  const { user, plan } = await canDeploy(uid);
+  const websiteKind = input.websiteKind === "dynamic" ? "dynamic" : "static";
+  const { user, plan, limit } = await canDeploy(uid);
+  await assertWebsiteKind(uid, websiteKind);
   await assertMonthlyDeploymentQuota(uid, plan);
   if (input.envVars && input.envVars.length > 0) {
     await canUseEnvVars(uid);
   }
   if (input.autoDeploy) {
     await canUseAutoDeploy(uid);
+  }
+  if (input.platformSubdomain) {
+    await canUseFreeSubdomain(uid);
   }
 
   const db = getAdminDb();
@@ -52,7 +58,6 @@ export async function createAndDeployProject(uid: string, input: {
     const userSnap = await tx.get(userRef);
     const data = userSnap.data() ?? {};
     const count = Number(data.websiteCount ?? 0);
-    const limit = Number(data.websiteLimit ?? 0);
     if (count >= limit) {
       throw new AppError(
         "PLAN_LIMIT",
@@ -73,6 +78,7 @@ export async function createAndDeployProject(uid: string, input: {
       repo: input.repo,
       branch: input.branch,
       framework: input.framework ?? null,
+      websiteKind,
       vercelProjectId: null,
       vercelProjectName: null,
       latestDeploymentId: deploymentId,
@@ -336,6 +342,7 @@ export async function updateProjectEnv(uid: string, projectId: string, envVars: 
 }
 
 export async function attachPlatformSubdomain(uid: string, projectId: string, subdomain: string) {
+  await canUseFreeSubdomain(uid);
   const db = getAdminDb();
   const snap = await db.doc(userProjectPath(uid, projectId)).get();
   if (!snap.exists) throw new AppError("NOT_FOUND", "Project not found.", 404);

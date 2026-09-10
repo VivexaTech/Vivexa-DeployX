@@ -12,7 +12,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "validate:cron": "node scripts/validate-vercel-cron.mjs",
-    "seed": "npx tsx scripts/seed.ts"
+    "seed": "npx tsx scripts/seed.ts",
+    "verify:plans": "npx tsx scripts/verify-plans.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
