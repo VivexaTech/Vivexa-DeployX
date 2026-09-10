@@ -12,6 +12,10 @@ function mapUnknownError(error: unknown) {
   if (error instanceof ZodError) {
     return new AppError("VALIDATION", error.issues[0]?.message || "Invalid input.", 400);
   }
+  const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+  if (code.startsWith("auth/")) {
+    return new AppError("UNAUTHENTICATED", "Google sign-in expired. Please try again.", 401);
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (/reserved|not allowed|already in use|valid domain/i.test(message)) {
     return new AppError("VALIDATION", message, 400);
