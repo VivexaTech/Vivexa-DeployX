@@ -1,0 +1,46 @@
+{
+  "about": {
+    "support": {
+      "phone": "CONFIGURE_IN_FIRESTORE",
+      "email": "CONFIGURE_IN_FIRESTORE"
+    },
+    "company": {
+      "name": "Vivexa Tech",
+      "platformName": "Vivexa DeployX",
+      "tagline": "Deploy your websites with simplicity.",
+      "mission": "Configure this text in Firestore.",
+      "aboutPlatform": "Configure this text in Firestore.",
+      "aboutCompany": "Configure this text in Firestore.",
+      "whyExists": "Configure this text in Firestore."
+    },
+    "reservedSubdomains": {
+      "names": ["www", "app", "dashboard", "admin", "api", "mail", "support", "billing", "auth", "login", "signup", "status"]
+    }
+  },
+  "plans": [
+    {
+      "id": "starter",
+      "planName": "Starter",
+      "planPrice": 0,
+      "currency": "INR",
+      "keyPoints": ["Replace these values in Firestore", "Set razorpayPlanId before selling"],
+      "maxWebsites": 3,
+      "duration": "monthly",
+      "billingCycle": "monthly",
+      "razorpayPlanId": "REPLACE_WITH_RAZORPAY_PLAN_ID",
+      "active": false,
+      "displayOrder": 1,
+      "gracePeriodDays": 3,
+      "features": {
+        "customDomains": false,
+        "githubDeployment": true,
+        "environmentVariables": true,
+        "automaticDeployments": false,
+        "teamMembers": 1,
+        "maxDeploymentsPerMonth": null,
+        "supportLevel": "standard"
+      }
+    }
+  ],
+  "projects": []
+}
