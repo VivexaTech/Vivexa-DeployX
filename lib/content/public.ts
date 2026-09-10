@@ -57,6 +57,13 @@ export async function getPlanById(planId: string): Promise<PricingPlan | null> {
   return getPlanFromFirestoreRest(planId);
 }
 
+export async function getPlanByRazorpayPlanId(razorpayPlanId: string): Promise<PricingPlan | null> {
+  const id = razorpayPlanId.trim();
+  if (!id) return null;
+  const plans = await getActivePlans();
+  return plans.find((plan) => plan.razorpayPlanId === id) ?? null;
+}
+
 export async function getShowcaseProjects(): Promise<ShowcaseProject[]> {
   const db = tryGetAdminDb();
   if (!db) return [];

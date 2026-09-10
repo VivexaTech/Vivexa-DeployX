@@ -4,9 +4,13 @@ import { collections } from "@/lib/firebase/collections";
 import { handleRouteError, json } from "@/lib/http";
 import { logger } from "@/lib/logger";
 import { getRazorpay, razorpayConfigured } from "@/lib/razorpay/client";
-import { applySubscriptionStatus } from "@/lib/subscriptions/service";
+import {
+  applySubscriptionActivation,
+  applySubscriptionStatus,
+  mapRazorpaySubscriptionStatus,
+  razorpayStatusIsPaid,
+} from "@/lib/subscriptions/service";
 import { nowIso } from "@/lib/utils";
-import type { SubscriptionStatus } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -21,9 +25,23 @@ export async function GET(request: Request) {
     for (const doc of snap.docs) {
       try {
         const remote = await razorpay.subscriptions.fetch(doc.id);
-        const status = String(remote.status) as SubscriptionStatus;
-        if (status && status !== doc.data().status) {
-          await applySubscriptionStatus(doc.id, status);
+        const remoteStatus = String(remote.status ?? "");
+        const mapped = mapRazorpaySubscriptionStatus(remoteStatus);
+        const localStatus = String(doc.data().status ?? "");
+        const userId = String(doc.data().userId ?? "");
+        const planId = String(doc.data().planId ?? "");
+        if (razorpayStatusIsPaid(remoteStatus) && userId && planId && localStatus === "pending") {
+          await applySubscriptionActivation({
+            userId,
+            planId,
+            razorpaySubscriptionId: doc.id,
+            status: mapped,
+          });
+          updated += 1;
+          continue;
+        }
+        if (mapped && mapped !== localStatus) {
+          await applySubscriptionStatus(doc.id, mapped);
           updated += 1;
         }
       } catch (error) {

@@ -101,7 +101,7 @@ export async function canDeploy(uid: string) {
   if (usage >= limit) {
     throw new AppError(
       "PLAN_LIMIT",
-      `You've reached your current plan limit. Upgrade your plan to deploy more websites.`,
+      `You've reached your ${plan?.planName ?? user.activePlanName ?? "current"} plan limit. Upgrade your plan to deploy more websites.`,
       403,
       {
         used: usage,

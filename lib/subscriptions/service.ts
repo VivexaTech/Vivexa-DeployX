@@ -97,22 +97,13 @@ export async function applySubscriptionActivation(input: {
     { merge: true },
   );
 
-  if (input.paymentId) {
+  if (!input.paymentId) return { activated: true, invoice: null };
+
+  try {
     const paymentRef = db.collection(collections.payments).doc(input.paymentId);
     const paymentSnap = await paymentRef.get();
     if (paymentSnap.exists && paymentSnap.data()?.invoiced) {
-      await userRef.set(
-        {
-          activePlanId: input.planId,
-          activePlanName: plan?.planName ?? user.activePlanName,
-          subscriptionId: input.razorpaySubscriptionId,
-          subscriptionStatus: status,
-          websiteLimit: plan?.maxWebsites ?? user.websiteLimit,
-          updatedAt: nowIso(),
-        },
-        { merge: true },
-      );
-      return;
+      return { activated: true, invoice: null, duplicate: true };
     }
     await paymentRef.set(
       {
@@ -121,57 +112,77 @@ export async function applySubscriptionActivation(input: {
         subscriptionId: input.razorpaySubscriptionId,
         planId: input.planId,
         amount,
+        currency: plan?.currency ?? "INR",
         status: "captured",
         invoiced: true,
         createdAt: paymentSnap.data()?.createdAt ?? nowIso(),
       },
       { merge: true },
     );
-  }
 
-  const invoiceId = nanoid();
-  const invoice: Invoice = {
-    invoiceId,
-    invoiceNumber: nextInvoiceNumber(),
-    userId: input.userId,
-    customerName: user.name,
-    customerEmail: user.email,
-    planId: input.planId,
-    planName: plan?.planName ?? "Subscription",
-    amount,
-    currency: plan?.currency ?? "INR",
-    taxAmount: 0,
-    taxLabel: null,
-    paymentId: input.paymentId ?? null,
-    subscriptionId: input.razorpaySubscriptionId,
-    status: "paid",
-    paymentDate: nowIso(),
-    renewalDate,
-    createdAt: nowIso(),
-  };
-  await db.collection(userInvoicesPath(input.userId)).doc(invoiceId).set(invoice);
-
-  await createNotification({
-    uid: input.userId,
-    type: "subscription_activated",
-    title: "Subscription activated",
-    message: `${invoice.planName} is now active on your account.`,
-    href: "/dashboard/billing",
-  });
-
-  if (input.sendMail !== false && user.email) {
-    const template = subscriptionSuccessEmail({
-      name: user.name,
-      planName: invoice.planName,
+    const invoiceId = nanoid();
+    const invoice: Invoice = {
+      invoiceId,
+      invoiceNumber: nextInvoiceNumber(),
+      userId: input.userId,
+      customerName: user.name,
+      customerEmail: user.email,
+      planId: input.planId,
+      planName: plan?.planName ?? "Subscription",
       amount,
-      currency: invoice.currency,
+      currency: plan?.currency ?? "INR",
+      taxAmount: 0,
+      taxLabel: null,
+      paymentId: input.paymentId,
+      subscriptionId: input.razorpaySubscriptionId,
+      status: "paid",
+      paymentDate: nowIso(),
       renewalDate,
-      invoiceNumber: invoice.invoiceNumber,
-    });
-    await sendEmail({ to: user.email, ...template });
-  }
+      createdAt: nowIso(),
+    };
+    await db.collection(userInvoicesPath(input.userId)).doc(invoiceId).set(invoice);
 
-  return invoice;
+    await createNotification({
+      uid: input.userId,
+      type: "subscription_activated",
+      title: "Subscription activated",
+      message: `${invoice.planName} is now active on your account.`,
+      href: "/dashboard/billing",
+    });
+
+    if (input.sendMail !== false && user.email) {
+      let attachments: { filename: string; content: Buffer }[] | undefined;
+      try {
+        const { generateInvoicePdf } = await import("@/lib/invoices/generate");
+        attachments = [{ filename: `${invoice.invoiceNumber}.pdf`, content: await generateInvoicePdf(invoice) }];
+      } catch (error) {
+        logger.error("Invoice PDF generation failed; sending email without attachment", {
+          message: error instanceof Error ? error.message : "unknown",
+        });
+      }
+      const template = subscriptionSuccessEmail({
+        name: user.name,
+        planName: invoice.planName,
+        amount,
+        currency: invoice.currency,
+        renewalDate,
+        invoiceNumber: invoice.invoiceNumber,
+      });
+      const mailed = await sendEmail({ to: user.email, ...template, attachments });
+      if (mailed.failed) {
+        logger.warn("Invoice email failed after subscription activation; subscription stays active", {
+          invoiceNumber: invoice.invoiceNumber,
+        });
+      }
+    }
+    return { activated: true, invoice };
+  } catch (error) {
+    logger.error("Invoice/email step failed after subscription activation", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return { activated: true, invoice: null };
+  }
 }
 
 export async function applyPaymentFailure(input: {
@@ -362,4 +373,60 @@ export async function sendDueRenewalReminders() {
   }
 
   return { sent, skipped, reminderDays: RENEWAL_REMINDER_DAYS };
+}
+
+export function mapRazorpaySubscriptionStatus(status: string): SubscriptionStatus {
+  switch (status) {
+    case "authenticated":
+      return "authenticated";
+    case "active":
+      return "active";
+    case "halted":
+      return "halted";
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    case "completed":
+      return "completed";
+    case "paused":
+      return "paused";
+    case "expired":
+      return "expired";
+    case "pending":
+    case "created":
+    default:
+      return "pending";
+  }
+}
+
+export function razorpayStatusIsPaid(status: string) {
+  return status === "authenticated" || status === "active";
+}
+
+export async function syncSubscriptionFromRazorpay(userId: string) {
+  const db = getAdminDb();
+  const userSnap = await db.collection(collections.users).doc(userId).get();
+  const user = userSnap.data() as UserProfile | undefined;
+  if (!user?.subscriptionId) {
+    return { status: user?.subscriptionStatus ?? "none", synced: false };
+  }
+  const { getRazorpay } = await import("@/lib/razorpay/client");
+  const remote = await getRazorpay().subscriptions.fetch(user.subscriptionId);
+  const remoteStatus = String(remote.status ?? "");
+  const local = await db.collection(collections.subscriptions).doc(user.subscriptionId).get();
+  const planId = String(local.data()?.planId ?? user.activePlanId ?? "");
+  if (razorpayStatusIsPaid(remoteStatus) && planId) {
+    await applySubscriptionActivation({
+      userId,
+      planId,
+      razorpaySubscriptionId: user.subscriptionId,
+      status: mapRazorpaySubscriptionStatus(remoteStatus),
+    });
+    return { status: mapRazorpaySubscriptionStatus(remoteStatus), synced: true };
+  }
+  const mapped = mapRazorpaySubscriptionStatus(remoteStatus);
+  if (mapped !== user.subscriptionStatus) {
+    await applySubscriptionStatus(user.subscriptionId, mapped);
+  }
+  return { status: mapped, synced: mapped !== user.subscriptionStatus };
 }

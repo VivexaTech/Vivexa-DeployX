@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from "crypto";
+import { createPublicKey, verify } from "node:crypto";
 import { AppError, isAppError } from "@/lib/errors";
 import { getAppUrl } from "@/lib/env";
 
@@ -154,25 +154,30 @@ async function verifyWithIdentityToolkit(idToken: string): Promise<VerifiedFireb
 }
 
 export async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseUser> {
-  const projectId = getFirebaseProjectId();
-  if (!projectId) {
-    throw new AppError(
-      "CONFIG_MISSING",
-      "NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in Vercel Production environment variables.",
-      503,
-    );
-  }
   try {
-    return await verifyWithGoogleCerts(idToken, projectId);
-  } catch (error) {
-    if (isAppError(error) && error.code === "UNAUTHENTICATED") throw error;
-    try {
-      return await verifyWithIdentityToolkit(idToken);
-    } catch (fallbackError) {
-      if (isAppError(fallbackError)) throw fallbackError;
-      throw isAppError(error)
-        ? error
-        : new AppError("EXTERNAL_UNAVAILABLE", "Could not verify Google sign-in. Try again.", 503);
+    const projectId = getFirebaseProjectId();
+    if (!projectId) {
+      throw new AppError(
+        "CONFIG_MISSING",
+        "NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in Vercel Production environment variables.",
+        503,
+      );
     }
+    try {
+      return await verifyWithGoogleCerts(idToken, projectId);
+    } catch (error) {
+      if (isAppError(error) && error.code === "UNAUTHENTICATED") throw error;
+      try {
+        return await verifyWithIdentityToolkit(idToken);
+      } catch (fallbackError) {
+        if (isAppError(fallbackError)) throw fallbackError;
+        throw isAppError(error)
+          ? error
+          : new AppError("EXTERNAL_UNAVAILABLE", "Could not verify Google sign-in. Try again.", 503);
+      }
+    }
+  } catch (error) {
+    if (isAppError(error)) throw error;
+    throw new AppError("EXTERNAL_UNAVAILABLE", "Could not verify Google sign-in. Try again.", 503);
   }
 }

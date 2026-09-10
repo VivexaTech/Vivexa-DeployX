@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,12 +22,46 @@ function BillingInner() {
   const { push } = useToast();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const pendingSyncStarted = useRef(false);
 
   useEffect(() => {
     if (params.get("checkout") || params.get("pending")) {
-      push({ title: "Payment received. Activation is confirmed by webhook, not the checkout window.", tone: "success" });
+      setConfirming(true);
+      push({ title: "Payment received. Confirming your subscription...", tone: "success" });
     }
   }, [params, push]);
+
+  useEffect(() => {
+    if (!data || pendingSyncStarted.current) return;
+    if (data.user.subscriptionStatus === "pending") {
+      pendingSyncStarted.current = true;
+      setConfirming(true);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (!confirming) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      apiFetch<{ status?: string; synced?: boolean }>("/api/billing/sync", { method: "POST" })
+        .then(async (result) => {
+          await refresh();
+          if (result.status === "active" || result.status === "authenticated") {
+            setConfirming(false);
+            push({ title: "Subscription Active", tone: "success" });
+            window.clearInterval(timer);
+          }
+        })
+        .catch(() => undefined);
+      if (attempts >= 12) {
+        window.clearInterval(timer);
+        setConfirming(false);
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [confirming, push, refresh]);
 
   async function subscribe(planId: string) {
     setBusy(true);
@@ -57,7 +91,8 @@ function BillingInner() {
         name: payload.name,
         email: payload.email,
       });
-      push({ title: "Checkout complete. Waiting for Razorpay webhook verification.", tone: "success" });
+      push({ title: "Payment received. Confirming your subscription...", tone: "success" });
+      setConfirming(true);
       await refresh();
     } catch (error) {
       push({ title: error instanceof Error ? error.message : "Checkout failed", tone: "danger" });
@@ -77,6 +112,11 @@ function BillingInner() {
         <div className="mt-3 flex flex-wrap gap-2">
           <Badge tone={statusTone(data.user.subscriptionStatus)}>{data.user.subscriptionStatus}</Badge>
         </div>
+        {confirming || data.user.subscriptionStatus === "pending" ? (
+          <p className="mt-3 text-sm text-warning">
+            Payment received. Confirming your subscription...
+          </p>
+        ) : null}
         <p className="mt-3 text-sm text-muted">Renews {formatDate(data.user.renewalDate)}</p>
         <p className="mt-1 text-sm text-muted">
           {data.user.websiteCount} / {data.user.websiteLimit} websites used

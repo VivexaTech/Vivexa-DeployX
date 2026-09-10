@@ -1,16 +1,57 @@
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import type { App } from "firebase-admin/app";
+import type { Auth } from "firebase-admin/auth";
+import type { Firestore } from "firebase-admin/firestore";
 import {
   getFirebaseAdminClientEmail,
   getFirebaseAdminProjectId,
   isAdminSdkConfigured,
   readEnv,
 } from "@/lib/env.server";
-import { AppError } from "@/lib/errors";
+import { AppError, isAppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
+type AppModule = {
+  getApps: () => App[];
+  initializeApp: (options: { credential: unknown; projectId?: string }) => App;
+  cert: (serviceAccount: { projectId: string; clientEmail: string; privateKey: string }) => unknown;
+};
+
+type AuthModule = {
+  getAuth: (app?: App) => Auth;
+};
+
+type FirestoreModule = {
+  getFirestore: (app?: App) => Firestore;
+};
+
 let adminApp: App | null = null;
+let appMod: AppModule | null = null;
+
+function resolveModule<T extends object>(loaded: T & { default?: T }, method: keyof T): T {
+  if (loaded && typeof loaded[method] === "function") return loaded;
+  if (loaded?.default && typeof loaded.default[method] === "function") return loaded.default;
+  throw new AppError("FIREBASE_ERROR", "Authentication service temporarily unavailable", 500);
+}
+
+function loadAppModule(): AppModule {
+  if (appMod) return appMod;
+  try {
+    // Lazy CJS require of the modular entry. Static ESM `import "firebase-admin/app"`
+    // crashes Vercel functions at module-evaluation time (HTTP 500, empty body).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const loaded = require("firebase-admin/app") as AppModule & { default?: AppModule };
+    appMod = resolveModule(loaded, "initializeApp");
+    return appMod;
+  } catch (error) {
+    if (isAppError(error)) throw error;
+    logger.error("firebase-admin/app failed to load", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : "unknown",
+      node: process.versions.node,
+    });
+    throw new AppError("FIREBASE_ERROR", "Authentication service temporarily unavailable", 500);
+  }
+}
 
 function decodeMaybeBase64(value: string) {
   const compact = value.replace(/\s+/g, "");
@@ -53,7 +94,8 @@ export function getAdminApp() {
     );
   }
   if (adminApp) return adminApp;
-  const existing = getApps();
+  const admin = loadAppModule();
+  const existing = admin.getApps();
   if (existing.length > 0) {
     adminApp = existing[0] as App;
     return adminApp;
@@ -67,8 +109,8 @@ export function getAdminApp() {
     );
   }
   try {
-    adminApp = initializeApp({
-      credential: cert({
+    adminApp = admin.initializeApp({
+      credential: admin.cert({
         projectId: getFirebaseAdminProjectId(),
         clientEmail: getFirebaseAdminClientEmail(),
         privateKey,
@@ -94,18 +136,50 @@ export function getAdminApp() {
 }
 
 export function getAdminAuth(): Auth {
-  return getAuth(getAdminApp());
+  const app = getAdminApp();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const loaded = require("firebase-admin/auth") as AuthModule & { default?: AuthModule };
+    return resolveModule(loaded, "getAuth").getAuth(app);
+  } catch (error) {
+    if (isAppError(error)) throw error;
+    throw new AppError("FIREBASE_ERROR", "Authentication service temporarily unavailable", 500);
+  }
 }
 
 export function getAdminDb(): Firestore {
-  return getFirestore(getAdminApp());
+  const app = getAdminApp();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const loaded = require("firebase-admin/firestore") as FirestoreModule & { default?: FirestoreModule };
+    return resolveModule(loaded, "getFirestore").getFirestore(app);
+  } catch (error) {
+    if (isAppError(error)) throw error;
+    throw new AppError("FIREBASE_ERROR", "Authentication service temporarily unavailable", 500);
+  }
 }
 
 export function tryGetAdminDb() {
   if (!isAdminSdkConfigured()) return null;
   try {
     return getAdminDb();
-  } catch {
+  } catch (error) {
+    logger.error("Firebase Admin database unavailable", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : "unknown",
+    });
     return null;
+  }
+}
+
+export function probeAdminSdk() {
+  try {
+    getAdminApp();
+    return { ready: true as const };
+  } catch (error) {
+    return {
+      ready: false as const,
+      code: error instanceof AppError ? error.code : "INTERNAL",
+    };
   }
 }

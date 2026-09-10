@@ -61,7 +61,7 @@ export async function createAndDeployProject(uid: string, input: {
     if (count >= limit) {
       throw new AppError(
         "PLAN_LIMIT",
-        "You've reached your current plan limit. Upgrade your plan to deploy more websites.",
+        `You've reached your ${user.activePlanName ?? plan?.planName ?? "current"} plan limit. Upgrade your plan to deploy more websites.`,
         403,
         { used: count, limit, planName: user.activePlanName ?? plan?.planName ?? "current" },
       );

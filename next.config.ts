@@ -29,6 +29,7 @@ const tracedApiRoutes = [
   "/api/billing/subscribe",
   "/api/billing/cancel",
   "/api/billing/change-plan",
+  "/api/billing/sync",
   "/api/invoices",
   "/api/admin/content",
   "/api/webhooks/razorpay",

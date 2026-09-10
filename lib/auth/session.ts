@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "@/config/constants";
@@ -52,8 +52,6 @@ function createAppSessionToken(user: SessionUser) {
   const payload = JSON.stringify({
     uid: user.uid,
     email: user.email,
-    name: user.name,
-    picture: user.picture,
     exp: Date.now() + SESSION_MAX_AGE_MS,
   });
   const body = Buffer.from(payload).toString("base64url");
@@ -86,6 +84,16 @@ export async function createSession(idToken: string) {
   logger.info("auth.session verifying google token");
   const decoded = await verifyFirebaseIdToken(idToken);
   logger.info("auth.session google token verified", { hasUid: Boolean(decoded.uid) });
+  try {
+    const { upsertUserFromDecoded } = await import("@/lib/auth/user");
+    await upsertUserFromDecoded(decoded);
+    logger.info("auth.session firestore user upserted");
+  } catch (error) {
+    logger.error("auth.session firestore upsert failed", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
   return { decoded, sessionCookie: createAppSessionToken(decoded) };
 }
 
