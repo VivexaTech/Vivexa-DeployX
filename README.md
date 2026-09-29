@@ -145,7 +145,7 @@ npm run admin:promote -- you@example.com
 or in the Supabase SQL Editor:
 
 ```sql
-update public.profiles set role = 'super_admin' where email = 'you@example.com';
+update public.profiles set role = 'super_admin' where email = 'admin@vivexatech.in';
 ```
 
 Roles: `user`, `admin`, `super_admin`. Admin routes are protected on the server (`requireAdmin`) and every admin server action re-checks the role. Only super admins can change roles or delete plans; nobody can change their own role. Role, status and email columns are protected by a database trigger, so they cannot be changed from the client.

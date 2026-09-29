@@ -66,10 +66,18 @@ export async function buildQuote(input: {
   return { plan, cycle: input.cycle, coupon, tax };
 }
 
+const MIGRATION_HINT = "run supabase/migrations/0002_checkout_tax_invoices.sql in the Supabase SQL Editor";
+
+/** PostgREST / Postgres codes for a table or column that doesn't exist yet. */
+function isMissingSchema(error: { code?: string }): boolean {
+  return ["PGRST205", "PGRST204", "42P01", "42703"].includes(error.code ?? "");
+}
+
 export async function getBillingProfile(userId: string): Promise<BillingProfile | null> {
   const { data, error } = await createAdminClient().from("billing_profiles").select("*").eq("user_id", userId).maybeSingle();
   if (error) {
-    console.error("[checkout] billing profile lookup failed:", error.message);
+    if (isMissingSchema(error)) console.warn(`[checkout] billing_profiles table missing — ${MIGRATION_HINT}`);
+    else console.error("[checkout] billing profile lookup failed:", error.message);
     return null;
   }
   return (data as BillingProfile | null) ?? null;
@@ -91,6 +99,10 @@ export async function saveBillingProfile(userId: string, billing: BillingDetails
       { onConflict: "user_id" },
     );
   if (error) {
+    if (isMissingSchema(error)) {
+      console.error(`[checkout] billing_profiles table missing — ${MIGRATION_HINT}`);
+      throw new PublicError("Checkout is temporarily unavailable because billing isn't set up yet. Please contact support.", 503);
+    }
     console.error("[checkout] billing profile save failed:", error.message, error.code);
     throw new PublicError("Your billing details could not be saved. Please try again.", 500);
   }
