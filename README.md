@@ -4,11 +4,11 @@
 
 ## 1. Project overview
 
-Vivexa DeployX is a SaaS deployment management platform. Users sign up, connect GitHub, import a repository, configure the build and environment variables, and deploy. They get live build logs, production URLs, DeployX subdomains and custom domains, plan-based limits, Razorpay billing, support tickets and in-app notifications. Administrators manage users, plans, subscriptions, payments, coupons, support, announcements and platform settings, with every change written to an audit log.
+Vivexa DeployX is a SaaS deployment management platform. Users sign up, connect GitHub, import a repository, configure the build and environment variables, and deploy with automatic Git deployment on every push. They get live build logs, production URLs, DeployX subdomains and custom domains, plan-based limits, Razorpay billing, support tickets and in-app notifications. Administrators manage users, plans, subscriptions, payments, coupons, support, announcements and platform settings, with every change written to an audit log.
 
-DeployX provides a unified deployment management interface. Deployments may be executed using third-party infrastructure providers, including Vercel. Use of third-party infrastructure may be subject to the applicable provider's terms and policies.
+DeployX provides a unified, white-label deployment management experience powered by enterprise cloud build and hosting infrastructure.
 
-**How a deployment works:** DeployX downloads the selected commit from GitHub with the user's OAuth token, uploads the source files to Vercel, creates (or updates) a Vercel project with the configured framework, commands and environment variables, starts a production deployment, and then tracks its status and logs. Private repositories work without installing a Vercel GitHub App.
+**How a deployment works:** DeployX downloads the selected commit from GitHub with the user's OAuth token, bundles the source files, provisions the project configuration with the configured framework, commands and environment variables, starts the deployment on the cloud build engine, and streams real-time status and sanitized logs. Private repositories work without installing a third-party GitHub App. When automatic deployment is enabled, pushes to the configured production branch automatically trigger zero-downtime builds.
 
 ## 2. Tech stack
 
@@ -18,8 +18,8 @@ DeployX provides a unified deployment management interface. Deployments may be e
 | Styling | Tailwind CSS v4, Lucide icons, Geist font |
 | Auth & database | Supabase Auth + Postgres with Row Level Security |
 | Validation | Zod |
-| Git | GitHub OAuth App + REST API |
-| Infrastructure | Vercel REST API |
+| Git & Automation | GitHub OAuth App, REST API & Webhooks (`X-Hub-Signature-256`) |
+| Infrastructure | Enterprise Cloud Hosting Engine |
 | Payments | Razorpay Orders, Checkout and Webhooks |
 
 ## 3. Local setup
@@ -120,7 +120,7 @@ Only `NEXT_PUBLIC_*` variables and the Razorpay key ID ever reach the browser.
 
 ## 9. Database migration
 
-**Supabase SQL Editor:** open *SQL Editor*, paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`supabase/seed.sql`](supabase/seed.sql), then [`supabase/migrations/0002_checkout_tax_invoices.sql`](supabase/migrations/0002_checkout_tax_invoices.sql). Migration 0002 is additive and safe on existing data: it adds `billing_profiles`, `invoices`, `invoice_counters`, tax/snapshot columns on `payments`, default tax/invoice settings and the public `branding` storage bucket for the invoice logo.
+**Supabase SQL Editor:** open *SQL Editor*, paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`supabase/seed.sql`](supabase/seed.sql), then [`supabase/migrations/0002_checkout_tax_invoices.sql`](supabase/migrations/0002_checkout_tax_invoices.sql), and [`supabase/migrations/0003_auto_git_deployment.sql`](supabase/migrations/0003_auto_git_deployment.sql). Migration 0003 adds automatic Git deployment tracking (`auto_deploy`, `webhook_secret`, and `production_deployment_id`) with zero downtime on failed commits. Migration 0002 adds `billing_profiles`, `invoices`, `invoice_counters`, tax/snapshot columns on `payments`, default tax/invoice settings and the public `branding` storage bucket for the invoice logo.
 
 **Supabase CLI:**
 

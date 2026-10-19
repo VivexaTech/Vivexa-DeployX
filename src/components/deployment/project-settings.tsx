@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Eye, EyeOff, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Eye, EyeOff, GitBranch, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Switch } from "@/components/ui/input";
@@ -37,6 +37,7 @@ export function ProjectSettingsForm({ project }: { project: Project }) {
     buildCommand: project.build_command ?? "",
     installCommand: project.install_command ?? "",
     outputDirectory: project.output_directory ?? "",
+    autoDeploy: project.auto_deploy ?? true,
   });
   const preset = getFramework(form.framework);
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -87,6 +88,13 @@ export function ProjectSettingsForm({ project }: { project: Project }) {
           <Field label="Output Directory" htmlFor="s-output">
             <Input id="s-output" value={form.outputDirectory} onChange={(e) => set({ outputDirectory: e.target.value })} placeholder={preset.outputDirectory ?? "Default"} className="font-mono text-[13px]" />
           </Field>
+          <div className="flex items-center pt-2 md:col-span-2">
+            <Switch
+              checked={form.autoDeploy}
+              onChange={(val) => set({ autoDeploy: val })}
+              label="Automatic Git Deployments (deploy on push to production branch)"
+            />
+          </div>
         </div>
         <CardFooter className="justify-end">
           <Button type="submit" loading={saving}>
@@ -376,3 +384,162 @@ export function DeleteProject({ projectId, projectName }: { projectId: string; p
     </Card>
   );
 }
+
+export function GitWebhookSettings({ project }: { project: Project }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [configuring, setConfiguring] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [autoDeploy, setAutoDeploy] = useState(project.auto_deploy ?? true);
+  const [toggling, setToggling] = useState(false);
+
+  const webhookUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/webhooks/github?projectId=${project.id}`
+      : `/api/webhooks/github?projectId=${project.id}`;
+
+  const secret = project.webhook_secret || "Configured automatically on server";
+
+  const toggleAutoDeploy = async (enabled: boolean) => {
+    setAutoDeploy(enabled);
+    setToggling(true);
+    try {
+      await request(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: project.name,
+          branch: project.branch,
+          framework: project.framework,
+          rootDirectory: project.root_directory,
+          autoDeploy: enabled,
+        }),
+      });
+      toast.success(
+        enabled ? "Automatic deployments enabled" : "Automatic deployments paused",
+        `Pushes to ${project.branch} will ${enabled ? "now trigger builds" : "no longer trigger builds"}.`,
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error("Could not update auto deploy setting", err instanceof Error ? err.message : undefined);
+      setAutoDeploy(!enabled);
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const autoConfigure = async () => {
+    setConfiguring(true);
+    try {
+      const res = await request<{ ok: boolean; message: string }>(`/api/projects/${project.id}/webhook`, {
+        method: "POST",
+      });
+      toast.success("Webhook configured on GitHub", res.message);
+      router.refresh();
+    } catch (err) {
+      toast.error(
+        "Automatic webhook setup failed",
+        err instanceof Error ? err.message : "You can configure it manually on GitHub below.",
+      );
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Git & Webhooks"
+        description="Configure automatic deployments for pushes to your connected GitHub repository."
+        action={
+          <Badge tone={autoDeploy ? "success" : "neutral"} dot>
+            {autoDeploy ? "Auto-Deploy Enabled" : "Auto-Deploy Disabled"}
+          </Badge>
+        }
+      />
+      <div className="space-y-5 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-background-subtle p-4">
+          <div>
+            <p className="text-sm font-medium text-foreground">Automatic Deployment on Git Push</p>
+            <p className="text-xs text-muted">
+              Trigger a new build whenever code is pushed to{" "}
+              <span className="inline-flex items-center gap-1 font-mono text-accent">
+                <GitBranch className="h-3 w-3" /> {project.branch}
+              </span>
+            </p>
+          </div>
+          <Switch
+            label={autoDeploy ? "Enabled" : "Disabled"}
+            checked={autoDeploy}
+            onChange={toggleAutoDeploy}
+            disabled={toggling}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[13px] font-medium text-foreground">Payload URL</span>
+              <CopyButton value={webhookUrl} label="Copy URL" />
+            </div>
+            <Input value={webhookUrl} readOnly className="bg-background-subtle font-mono text-xs" />
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[13px] font-medium text-foreground">Webhook Secret</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
+                >
+                  {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {showSecret ? "Hide" : "Reveal"}
+                </button>
+                <CopyButton value={secret} label="Copy Secret" />
+              </div>
+            </div>
+            <Input
+              type={showSecret ? "text" : "password"}
+              value={secret}
+              readOnly
+              className="bg-background-subtle font-mono text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border/80 bg-background-subtle p-4 text-xs text-muted">
+          <p className="font-medium text-foreground">GitHub Webhook Instructions:</p>
+          <ul className="list-inside list-disc space-y-1 text-muted-soft">
+            <li>
+              Payload URL: <span className="font-mono text-foreground">{webhookUrl}</span>
+            </li>
+            <li>
+              Content type: <span className="font-mono text-foreground">application/json</span>
+            </li>
+            <li>
+              Secret: <span className="font-mono text-foreground">{showSecret ? secret : "••••••••••••"}</span>
+            </li>
+            <li>
+              Events: <span className="font-mono text-foreground">Just the push event</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <CardFooter className="justify-between border-t border-border">
+        <a
+          href={`https://github.com/${project.repo_owner}/${project.repo_name}/settings/hooks`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+        >
+          Open GitHub Webhook Settings <ExternalLink className="h-3 w-3" />
+        </a>
+        <Button onClick={autoConfigure} loading={configuring} size="sm" variant="outline">
+          <RefreshCw className="h-3.5 w-3.5" /> Auto-Configure on GitHub
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+

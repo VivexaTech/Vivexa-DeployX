@@ -4,7 +4,7 @@ import type { IntegrationStatus } from "@/lib/env";
 const LABELS: Record<keyof IntegrationStatus, string> = {
   supabase: "Supabase service role",
   github: "GitHub OAuth",
-  vercel: "Vercel API",
+  vercel: "Deployment Engine",
   razorpay: "Razorpay",
   encryption: "ENCRYPTION_KEY",
 };

@@ -18,7 +18,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
   const project = data as Project;
   const status = getIntegrationStatus();
   const disabledReason = !status.vercel
-    ? "Vercel integration is not configured. Configure VERCEL_TOKEN to enable real deployments."
+    ? "Deployment infrastructure is not configured. Configure platform deployment credentials to enable real deployments."
     : !status.github
       ? "GitHub integration is not configured."
       : null;

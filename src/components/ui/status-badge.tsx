@@ -3,9 +3,10 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 const MAP: Record<string, { label: string; tone: BadgeTone; pulse?: boolean }> = {
   // deployments
   ready: { label: "Ready", tone: "success" },
+  deploying: { label: "Deploying", tone: "warning", pulse: true },
   building: { label: "Building", tone: "warning", pulse: true },
   queued: { label: "Queued", tone: "neutral", pulse: true },
-  error: { label: "Error", tone: "danger" },
+  error: { label: "Failed", tone: "danger" },
   cancelled: { label: "Cancelled", tone: "neutral" },
   // domains
   pending: { label: "Pending", tone: "neutral" },

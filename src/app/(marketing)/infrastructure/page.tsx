@@ -3,7 +3,7 @@ import { LegalPage } from "@/components/marketing/legal-page";
 
 export const metadata: Metadata = {
   title: "Infrastructure Disclosure",
-  description: "How DeployX uses third-party infrastructure providers, including Vercel.",
+  description: "How Vivexa DeployX provides enterprise cloud hosting and automated build infrastructure.",
   alternates: { canonical: "/infrastructure" },
 };
 

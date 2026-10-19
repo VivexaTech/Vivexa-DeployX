@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { DeleteProject, EnvVarManager, ProjectSettingsForm } from "@/components/deployment/project-settings";
+import { DeleteProject, EnvVarManager, GitWebhookSettings, ProjectSettingsForm } from "@/components/deployment/project-settings";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getIntegrationStatus } from "@/lib/env";
@@ -24,6 +24,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   return (
     <div className="space-y-6">
       <ProjectSettingsForm project={project} />
+      <GitWebhookSettings project={project} />
       <EnvVarManager projectId={project.id} initial={variables} encryptionConfigured={getIntegrationStatus().encryption} />
       <DeleteProject projectId={project.id} projectName={project.name} />
     </div>

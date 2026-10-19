@@ -5,7 +5,7 @@ import { PublicError } from "@/lib/utils/sanitize";
 const VERCEL_API = "https://api.vercel.com";
 
 export const VERCEL_NOT_CONFIGURED =
-  "Vercel integration is not configured. Configure VERCEL_TOKEN to enable real deployments.";
+  "Deployment infrastructure is not configured. Configure deployment credentials to enable real deployments.";
 
 export function assertVercelConfigured(): void {
   if (!integrations.vercel()) throw new PublicError(VERCEL_NOT_CONFIGURED, 503);
@@ -59,10 +59,11 @@ export function toPublicVercelError(error: unknown, fallback: string): PublicErr
   if (error instanceof PublicError) return error;
   if (error instanceof VercelApiError) {
     if (error.status === 401 || error.status === 403) {
-      return new PublicError("The deployment provider rejected the request. Check the platform's Vercel token permissions.", 502);
+      return new PublicError("The deployment infrastructure rejected the request. Please verify platform credentials.", 502);
     }
-    if (error.status === 429) return new PublicError("The deployment provider is rate limiting requests. Try again shortly.", 429);
-    return new PublicError(`${fallback}: ${error.message}`, 502);
+    if (error.status === 429) return new PublicError("The deployment infrastructure is rate limiting requests. Try again shortly.", 429);
+    const sanitizedMsg = error.message.replace(/vercel/gi, "DeployX");
+    return new PublicError(`${fallback}: ${sanitizedMsg}`, 502);
   }
   return new PublicError(fallback, 502);
 }

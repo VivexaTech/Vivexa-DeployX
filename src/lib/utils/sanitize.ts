@@ -7,9 +7,31 @@ const SECRET_PATTERNS: RegExp[] = [
   /(?<=(?:password|secret|token|api[_-]?key)\s*[=:]\s*)["']?[^\s"']{6,}/gi,
 ];
 
+const PROVIDER_BRANDING_PATTERNS: [RegExp, string][] = [
+  [/https?:\/\/[a-zA-Z0-9_.-]+\.vercel\.app\b/gi, "https://deployx.vivexatech.in"],
+  [/https?:\/\/[a-zA-Z0-9_.-]*vercel\.com[^\s]*/gi, "https://deployx.vivexatech.in"],
+  [/\b[a-zA-Z0-9_.-]+\.vercel\.app\b/gi, "deployx.vivexatech.in"],
+  [/\bvercel\.com\b/gi, "deployx.vivexatech.in"],
+  [/\bvercel\.link\b/gi, "deployx.vivexatech.in"],
+  [/\bx-vercel-[a-z0-9_-]+\b/gi, "x-deployx-trace"],
+  [/\bVercel CLI\b/gi, "DeployX CLI"],
+  [/\bVercel Build Output API\b/gi, "DeployX Build Engine"],
+  [/\bVercel\b/g, "Vivexa DeployX"],
+  [/\bvercel\b/g, "deployx"],
+];
+
+/** Scrubs provider-specific names, URLs and headers from messages or logs. */
+export function sanitizeProviderText(text: string): string {
+  let output = text;
+  for (const [pattern, replacement] of PROVIDER_BRANDING_PATTERNS) {
+    output = output.replace(pattern, replacement);
+  }
+  return output;
+}
+
 /**
- * Removes secrets from a log line. Known secret values (e.g. project env var
- * values) are redacted exactly; common token formats are redacted by pattern.
+ * Removes secrets and provider branding from a log line. Known secret values
+ * are redacted exactly; common token formats are redacted by pattern.
  */
 export function sanitizeLogLine(line: string, knownSecrets: string[] = []): string {
   let output = line;
@@ -21,7 +43,7 @@ export function sanitizeLogLine(line: string, knownSecrets: string[] = []): stri
   for (const pattern of SECRET_PATTERNS) {
     output = output.replace(pattern, "••••••");
   }
-  return output;
+  return sanitizeProviderText(output);
 }
 
 /** Generic message for unexpected errors; never leaks internals to clients. */

@@ -46,7 +46,7 @@ export default async function DeploymentPage({ params }: { params: Promise<{ id:
   const history = (historyRes.data as Pick<Deployment, "id" | "status" | "commit_sha" | "commit_message" | "created_at">[]) ?? [];
 
   const status = getIntegrationStatus();
-  const disabledReason = !status.vercel ? "Vercel integration is not configured. Configure VERCEL_TOKEN to enable real deployments." : null;
+  const disabledReason = !status.vercel ? "Deployment infrastructure is not configured. Configure platform deployment credentials to enable real deployments." : null;
   const framework = getFramework(project.framework);
   const duration = deployment.ready_at ? formatDuration(deployment.build_started_at ?? deployment.created_at, deployment.ready_at) : null;
 

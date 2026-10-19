@@ -26,8 +26,8 @@ export const DOCS: DocPage[] = [
     blocks: [
       { type: "p", text: "Vivexa DeployX is a deployment management platform operated by Vivexa Tech. It gives you one dashboard to import GitHub repositories, configure builds, deploy, monitor deployments, and connect domains." },
       { type: "h", text: "How deployments run" },
-      { type: "p", text: "DeployX provides a unified deployment management interface. Deployments may be executed using third-party infrastructure providers, including Vercel. Use of third-party infrastructure may be subject to the applicable provider's terms and policies." },
-      { type: "list", items: ["Your source is fetched from GitHub using the access you grant.", "DeployX uploads the source to the build infrastructure and starts a build.", "Build status, logs and URLs are synced back to your DeployX dashboard."] },
+      { type: "p", text: "DeployX provides an automated, production-grade cloud deployment pipeline. Builds and deployments are managed through a unified dashboard with zero configuration required for popular frameworks." },
+      { type: "list", items: ["Your source code is pulled from GitHub on each push or deployment request.", "DeployX packages and builds the application on cloud infrastructure with optimized build caches.", "Build status, live logs and production URLs are streamed in real time to your DeployX dashboard."] },
     ],
   },
   {
@@ -125,7 +125,7 @@ export const DOCS: DocPage[] = [
       { type: "h", text: "Build fails immediately" },
       { type: "p", text: "Check that the Root Directory, Install Command and Build Command are correct, and that required environment variables are set." },
       { type: "h", text: "\"Integration is not configured\"" },
-      { type: "p", text: "The platform operator has not configured that integration (GitHub, Vercel or Razorpay) yet. Contact support." },
+      { type: "p", text: "The platform operator has not configured that integration (GitHub, Deployment Engine or Razorpay) yet. Contact support." },
       { type: "h", text: "Domain stays in Pending" },
       { type: "p", text: "Confirm the DNS records exactly match the values shown, remove conflicting records, and wait for propagation before verifying again." },
     ],

@@ -8,6 +8,14 @@ import type { Deployment } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
+function sanitizeDeployment(d: Deployment): Deployment {
+  return {
+    ...d,
+    provider: "deployx",
+    inspector_url: null,
+  };
+}
+
 /** Returns the deployment, syncing its status from the provider when in progress. */
 export const GET = withUser({ rateLimit: { key: "deploy-status", limit: 120, windowMs: 60_000 } }, async ({ user, params }) => {
   const { data } = await createAdminClient()
@@ -26,9 +34,9 @@ export const GET = withUser({ rateLimit: { key: "deploy-status", limit: 120, win
       .eq("id", deployment.project_id)
       .maybeSingle();
     const productionUrl = (project as { production_url: string | null } | null)?.production_url ?? deployment.url;
-    return NextResponse.json({ deployment, productionUrl });
+    return NextResponse.json({ deployment: sanitizeDeployment(deployment), productionUrl });
   } catch (error) {
     const publicError = toPublicVercelError(error, "Could not refresh deployment status");
-    return NextResponse.json({ deployment: data, warning: publicError.message });
+    return NextResponse.json({ deployment: sanitizeDeployment(data as Deployment), warning: publicError.message });
   }
 });

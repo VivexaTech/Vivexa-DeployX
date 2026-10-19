@@ -11,8 +11,11 @@ export function mapReadyState(state: VercelReadyState | string | undefined): Dep
       return "error";
     case "CANCELED":
       return "cancelled";
+    case "DEPLOYING":
+      return "deploying";
     case "BUILDING":
     case "INITIALIZING":
+    case "ANALYZING":
       return "building";
     default:
       return "queued";

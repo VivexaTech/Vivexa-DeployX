@@ -40,6 +40,8 @@ export const projectSettingsSchema = z.object({
   buildCommand: optionalCommand,
   installCommand: optionalCommand,
   outputDirectory: optionalCommand,
+  autoDeploy: z.boolean().optional(),
+  webhookSecret: z.string().optional(),
 });
 
 export const createProjectSchema = projectSettingsSchema.extend({

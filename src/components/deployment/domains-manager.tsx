@@ -82,7 +82,7 @@ export function DomainsManager({
       {!vercelConfigured && (
         <ConfigNotice
           title="Domain management unavailable"
-          description="Vercel integration is not configured. Configure VERCEL_TOKEN to add and verify domains."
+          description="Domain infrastructure is not configured. Configure platform deployment credentials to add and verify domains."
         />
       )}
       <div className="flex justify-end">

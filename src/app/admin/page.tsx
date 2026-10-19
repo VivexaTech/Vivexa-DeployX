@@ -86,7 +86,7 @@ export default async function AdminDashboard() {
                 [
                   ["Supabase", status.supabase],
                   ["GitHub OAuth", status.github],
-                  ["Vercel", status.vercel],
+                  ["Deployment Engine", status.vercel],
                   ["Razorpay", status.razorpay],
                   ["Encryption key", status.encryption],
                 ] as const

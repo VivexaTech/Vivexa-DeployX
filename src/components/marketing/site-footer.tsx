@@ -59,8 +59,7 @@ export function SiteFooter() {
         <div className="mt-12 border-t border-border pt-6">
           <p className="max-w-3xl text-xs leading-relaxed text-muted-soft">{siteConfig.infrastructureDisclosure}</p>
           <p className="mt-3 text-xs text-muted-soft">
-            © {new Date().getFullYear()} {siteConfig.company}. All rights reserved. Vercel is a trademark of Vercel Inc.; DeployX is
-            not affiliated with or endorsed by Vercel Inc.
+            © {new Date().getFullYear()} {siteConfig.company}. All rights reserved. Built for modern cloud deployment workflows.
           </p>
         </div>
       </div>

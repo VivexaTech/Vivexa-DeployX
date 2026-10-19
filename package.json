@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "admin:promote": "node scripts/promote-admin.mjs",
-    "test:tax": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/tax.test.mjs"
+    "test:tax": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/tax.test.mjs",
+    "test:autodeploy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/auto-deploy.test.mjs",
+    "test": "npm run test:tax && npm run test:autodeploy"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

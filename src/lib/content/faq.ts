@@ -4,8 +4,8 @@ export const FAQS: { q: string; a: string }[] = [
     a: "DeployX is a deployment management platform by Vivexa Tech. Connect GitHub, deploy your applications, manage domains and monitor deployments from one dashboard.",
   },
   {
-    q: "Who runs the infrastructure my apps are deployed on?",
-    a: "DeployX provides a unified deployment management interface. Deployments may be executed using third-party infrastructure providers, including Vercel. Use of third-party infrastructure may be subject to the applicable provider's terms and policies.",
+    q: "How does the Vivexa DeployX hosting infrastructure work?",
+    a: "DeployX delivers enterprise-grade cloud hosting and edge deployment capabilities with automated build pipelines, global CDN routing, automated SSL certificates, and real-time monitoring.",
   },
   {
     q: "Which frameworks are supported?",

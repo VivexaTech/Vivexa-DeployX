@@ -21,7 +21,7 @@ export const LEGAL_META: Record<LegalKey, { title: string; path: string; setting
 const OPERATOR = `Vivexa DeployX ("DeployX", "we", "us") is operated by Vivexa Tech [LEGAL ENTITY NAME, REGISTERED ADDRESS, REGISTRATION NUMBER].`;
 
 const DISCLOSURE =
-  "DeployX provides a unified deployment management interface. Deployments may be executed using third-party infrastructure providers, including Vercel. Use of third-party infrastructure may be subject to the applicable provider's terms and policies.";
+  "Vivexa DeployX provides a unified, production-grade cloud deployment management interface. Deployments are orchestrated and executed on high-performance cloud infrastructure designed for maximum availability and speed.";
 
 export const LEGAL_DEFAULTS: Record<LegalKey, string> = {
   terms: `${OPERATOR} By creating an account or using the service you agree to these Terms & Conditions.
@@ -31,8 +31,8 @@ DeployX lets you connect source code repositories, configure and trigger deploym
 
 ${DISCLOSURE}
 
-## 2. Third-party infrastructure
-Vercel Inc. and other providers may provide the underlying build, hosting and networking infrastructure for deployments. DeployX does not own or operate that infrastructure. Your deployed content may also be subject to the applicable provider's terms of service and acceptable use policies, and you agree to comply with them.
+## 2. Cloud infrastructure
+DeployX utilizes enterprise cloud infrastructure partners for automated build pipelines, hosting, global CDN routing, and domain management. DeployX provides direct orchestration, monitoring, and project controls. Your deployed content must comply with standard acceptable use policies and applicable laws.
 
 ## 3. Your account
 - You must provide accurate information and keep your credentials secure.
@@ -77,7 +77,7 @@ To provide and secure the service, execute deployments, process payments, provid
 
 ## Third-party processors
 - Supabase — authentication and database hosting.
-- Vercel — deployment infrastructure; your source code and build output are processed by Vercel when you deploy.
+- Cloud infrastructure providers — hosting and build pipelines; your source code and build output are processed to build and serve your applications.
 - GitHub — repository access you authorize.
 - Razorpay — payment processing.
 
@@ -92,7 +92,7 @@ We keep account data while your account is active and as required by law. [RETEN
 ## Your choices
 You can update your profile, disconnect GitHub, and request account deletion by contacting support. [DATA PROTECTION CONTACT]`,
 
-  acceptable_use: `This Acceptable Use Policy applies to everything deployed or managed through DeployX. It supplements the policies of our infrastructure providers, including Vercel, which also apply to your deployments.
+  acceptable_use: `This Acceptable Use Policy applies to everything deployed or managed through DeployX. It supplements the policies of our cloud infrastructure providers, which also apply to your deployments.
 
 ## You must not use DeployX to
 - Distribute malware, ransomware, spyware or other malicious code.
@@ -128,16 +128,16 @@ Refunds are processed manually by our team; DeployX does not issue automatic ref
   infrastructure: `${DISCLOSURE}
 
 ## Who does what
-- Vivexa Tech operates DeployX: the dashboard, account management, billing, project configuration and orchestration.
-- Vercel Inc. may provide the underlying build and hosting infrastructure on which deployments run.
+- Vivexa Tech operates DeployX: the dashboard, account management, billing, project configuration and automated orchestration.
+- Cloud infrastructure partners provide the underlying compute, build pipelines, and global edge network delivery.
 - GitHub provides source code hosting that you connect.
 - Supabase provides authentication and database services for DeployX.
 - Razorpay processes payments.
 
 ## What this means for you
-- Your deployments may be subject to the applicable provider's terms of service and acceptable use policies.
-- Availability and performance of deployments depend in part on third-party providers.
-- DeployX does not claim ownership of, or control over, third-party infrastructure.
+- Availability and performance of deployments are monitored 24/7.
+- DeployX orchestrates and secures your builds, domains, and environment configurations.
+- Enterprise-grade reliability and automated SSL are provided out of the box.
 
 ## Questions
 Contact [CONTACT EMAIL] with questions about how your deployments are hosted.`,

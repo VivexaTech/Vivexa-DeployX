@@ -511,7 +511,7 @@ function ReviewStep({
           <ConfigNotice
             className="mb-5"
             title="Deployments are disabled"
-            description="Vercel integration is not configured. Configure VERCEL_TOKEN to enable real deployments. Your project will be created, but it won't be deployed."
+            description="Deployment infrastructure is not configured. Configure platform deployment credentials to enable real deployments. Your project will be created, but it won't be deployed."
           />
         )}
         <dl className="divide-y divide-border rounded-lg border border-border">
@@ -522,7 +522,7 @@ function ReviewStep({
             </div>
           ))}
         </dl>
-        <p className="mt-4 text-xs text-muted-soft">Deployments may be executed using third-party infrastructure providers, including Vercel.</p>
+        <p className="mt-4 text-xs text-muted-soft">Deployments are orchestrated and executed on high-performance cloud infrastructure.</p>
       </div>
       <StepFooter onBack={onBack} onNext={onNext} nextLabel={vercelConfigured ? "Deploy" : "Create project"} />
     </Card>

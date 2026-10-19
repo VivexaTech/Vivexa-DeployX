@@ -3,7 +3,7 @@ export type AccountStatus = "active" | "suspended";
 export type SubscriptionStatus = "pending" | "active" | "expired" | "cancelled";
 export type BillingCycle = "free" | "monthly" | "yearly";
 export type PaymentStatus = "created" | "paid" | "failed" | "cancelled" | "refunded";
-export type DeploymentStatus = "queued" | "building" | "ready" | "error" | "cancelled";
+export type DeploymentStatus = "queued" | "building" | "deploying" | "ready" | "error" | "failed" | "cancelled";
 export type DomainType = "subdomain" | "custom";
 export type DomainStatus = "pending" | "verifying" | "verified" | "invalid";
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
@@ -210,6 +210,9 @@ export interface Project {
   production_url: string | null;
   latest_deployment_status: DeploymentStatus | null;
   last_deployed_at: string | null;
+  auto_deploy?: boolean;
+  webhook_secret?: string | null;
+  production_deployment_id?: string | null;
   created_at: string;
   updated_at: string;
 }

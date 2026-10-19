@@ -64,6 +64,6 @@ export function buildVerificationRecords(domain: VercelProjectDomain): DnsRecord
     type: v.type,
     name: v.domain,
     value: v.value,
-    reason: v.reason,
+    reason: v.reason ? v.reason.replace(/vercel/gi, "DeployX") : undefined,
   }));
 }

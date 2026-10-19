@@ -96,7 +96,7 @@ const FLOW = [
   { icon: LayoutDashboard, label: "DeployX Dashboard" },
   { icon: Github, label: "GitHub Repository" },
   { icon: Boxes, label: "DeployX Orchestrator" },
-  { icon: Server, label: "Build Infrastructure (Vercel)" },
+  { icon: Server, label: "Cloud Build Engine" },
   { icon: Database, label: "Status & Logs Synced" },
 ];
 
@@ -115,7 +115,7 @@ export function WorkflowDiagram() {
         ))}
       </div>
       <p className="mt-6 text-center text-xs text-muted-soft">
-        Deployments may be executed on third-party infrastructure providers, including Vercel.
+        Deployments are orchestrated and executed on high-performance cloud infrastructure.
       </p>
     </div>
   );

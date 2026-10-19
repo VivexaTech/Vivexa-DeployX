@@ -9,6 +9,7 @@ import { toPublicVercelError } from "@/lib/vercel/client";
 import { deleteVercelProject, updateVercelProject } from "@/lib/vercel/projects";
 import { removeProjectDomain } from "@/lib/vercel/domains";
 import { PublicError } from "@/lib/utils/sanitize";
+import type { Project } from "@/types/database";
 
 export const PATCH = withUser({ schema: projectSettingsSchema }, async ({ user, body, params }) => {
   const project = await getOwnedProject(user.id, params.id);
@@ -27,22 +28,48 @@ export const PATCH = withUser({ schema: projectSettingsSchema }, async ({ user, 
     }
   }
 
-  const { data, error } = await createAdminClient()
+  const updates: Record<string, unknown> = {
+    name: body.name,
+    branch: body.branch,
+    framework: body.framework,
+    root_directory: body.rootDirectory,
+    build_command: body.buildCommand,
+    install_command: body.installCommand,
+    output_directory: body.outputDirectory,
+  };
+
+  if (typeof body.autoDeploy === "boolean") {
+    updates.auto_deploy = body.autoDeploy;
+  }
+  if (body.webhookSecret) {
+    updates.webhook_secret = body.webhookSecret;
+  }
+
+  const admin = createAdminClient();
+  let { data, error } = await admin
     .from("projects")
-    .update({
-      name: body.name,
-      branch: body.branch,
-      framework: body.framework,
-      root_directory: body.rootDirectory,
-      build_command: body.buildCommand,
-      install_command: body.installCommand,
-      output_directory: body.outputDirectory,
-    })
+    .update(updates)
     .eq("id", project.id)
     .select("*")
     .single();
+
+  if (error && error.code === "42703") {
+    // If auto_deploy / webhook_secret columns aren't in database yet, retry without them
+    delete updates.auto_deploy;
+    delete updates.webhook_secret;
+    const retry = await admin.from("projects").update(updates).eq("id", project.id).select("*").single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) throw new PublicError("Could not update project.", 500);
-  return NextResponse.json({ project: data });
+
+  const sanitized = {
+    ...(data as Project),
+    provider: "deployx",
+  };
+
+  return NextResponse.json({ project: sanitized });
 });
 
 export const DELETE = withUser({ rateLimit: { key: "project-delete", limit: 10, windowMs: 60_000 } }, async ({ user, params }) => {

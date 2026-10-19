@@ -75,7 +75,7 @@ async function ensureProviderProject(project: Project, deploymentId: string): Pr
 
   if (!providerId) {
     const name = slugify(`${serverConfig.vercelProjectPrefix()}-${project.slug}`, 90);
-    await appendLog(deploymentId, `Creating infrastructure project "${name}"`);
+    await appendLog(deploymentId, `Initializing build environment "${name}"`);
     const created = await createVercelProject(name, providerSettings(project));
     providerId = created.id;
     await admin.from("projects").update({ provider_project_id: providerId }).eq("id", project.id);
@@ -92,11 +92,23 @@ async function ensureProviderProject(project: Project, deploymentId: string): Pr
   return providerId;
 }
 
+export type QueueDeploymentOptions = {
+  branch?: string;
+  commitSha?: string;
+  commitMessage?: string;
+  commitAuthor?: string;
+  isRollback?: boolean;
+};
+
 /**
  * Validates and records a new deployment. The heavy lifting (archive download,
  * upload, provider deployment) runs in `runDeployment`, scheduled via `after()`.
  */
-export async function queueDeployment(userId: string, projectId: string): Promise<Deployment> {
+export async function queueDeployment(
+  userId: string,
+  projectId: string,
+  options?: QueueDeploymentOptions,
+): Promise<Deployment> {
   assertVercelConfigured();
   assertGithubConfigured();
 
@@ -112,7 +124,7 @@ export async function queueDeployment(userId: string, projectId: string): Promis
     .from("deployments")
     .select("id")
     .eq("project_id", project.id)
-    .in("status", ["queued", "building"])
+    .in("status", ["queued", "building", "deploying"])
     .gte("created_at", new Date(Date.now() - 30 * 60 * 1000).toISOString())
     .limit(1);
   if (active && active.length > 0) {
@@ -121,14 +133,25 @@ export async function queueDeployment(userId: string, projectId: string): Promis
 
   await assertWithinLimit(userId, "deployments");
 
+  const branch = options?.branch ?? project.branch;
+  const commitSha = options?.commitSha ?? null;
+  const commitMessage =
+    options?.commitMessage ??
+    (options?.isRollback && commitSha ? `Rollback to commit ${commitSha.slice(0, 7)}` : null);
+  const commitAuthor = options?.commitAuthor ?? null;
+
   const { data, error } = await admin
     .from("deployments")
     .insert({
       project_id: project.id,
       user_id: userId,
       status: "queued",
-      branch: project.branch,
+      branch,
+      commit_sha: commitSha,
+      commit_message: commitMessage,
+      commit_author: commitAuthor,
       provider: "vercel",
+      metadata: options?.isRollback ? { isRollback: true } : {},
     })
     .select("*")
     .single();
@@ -140,7 +163,11 @@ export async function queueDeployment(userId: string, projectId: string): Promis
     .eq("id", project.id);
   await incrementUsage(userId, "deployments_count");
   await incrementUsage(userId, "builds_count");
-  await appendLog((data as Deployment).id, "Deployment queued");
+  const queueMsg =
+    options?.isRollback && commitSha
+      ? `Rollback deployment queued for commit ${commitSha.slice(0, 7)}`
+      : "Deployment queued";
+  await appendLog((data as Deployment).id, queueMsg);
   return data as Deployment;
 }
 
@@ -181,16 +208,26 @@ export async function runDeployment(deploymentId: string): Promise<void> {
   try {
     const token = await getUserGithubToken(deployment.user_id);
     const ref = deployment.branch ?? project.branch;
+    let commitSha = deployment.commit_sha;
+    let commitMsg = deployment.commit_message;
+    let commitAuthor = deployment.commit_author;
 
-    await appendLog(deploymentId, `Cloning github.com/${project.repo_owner}/${project.repo_name} (branch: ${ref})`, "command");
-    const commit = await getLatestCommit(token, project.repo_owner, project.repo_name, ref);
-    await admin
-      .from("deployments")
-      .update({ commit_sha: commit.sha, commit_message: commit.message, commit_author: commit.author })
-      .eq("id", deploymentId);
-    await appendLog(deploymentId, `Commit ${commit.sha.slice(0, 7)}: ${commit.message}`);
+    if (!commitSha) {
+      await appendLog(deploymentId, `Cloning github.com/${project.repo_owner}/${project.repo_name} (branch: ${ref})`, "command");
+      const commit = await getLatestCommit(token, project.repo_owner, project.repo_name, ref);
+      commitSha = commit.sha;
+      commitMsg = commit.message;
+      commitAuthor = commit.author;
+      await admin
+        .from("deployments")
+        .update({ commit_sha: commitSha, commit_message: commitMsg, commit_author: commitAuthor })
+        .eq("id", deploymentId);
+    } else {
+      await appendLog(deploymentId, `Cloning github.com/${project.repo_owner}/${project.repo_name} (commit: ${commitSha.slice(0, 7)})`, "command");
+    }
+    await appendLog(deploymentId, `Commit ${commitSha.slice(0, 7)}: ${commitMsg ?? "Manual deployment"}`);
 
-    const archive = await downloadTarball(token, project.repo_owner, project.repo_name, commit.sha);
+    const archive = await downloadTarball(token, project.repo_owner, project.repo_name, commitSha);
     const { files, skipped } = extractTarGz(archive);
     const totalBytes = files.reduce((sum, f) => sum + f.content.length, 0);
     const settings = await getPlatformSettings();
@@ -210,7 +247,7 @@ export async function runDeployment(deploymentId: string): Promise<void> {
 
     const providerProjectId = await ensureProviderProject(project, deploymentId);
 
-    await appendLog(deploymentId, "Uploading source to build infrastructure");
+    await appendLog(deploymentId, "Uploading source to build engine");
     const refs: VercelFileRef[] = files.map((f) => ({ file: f.path, sha: sha1Hex(f.content), size: f.content.length }));
     const byPath = new Map(files.map((f) => [f.path, f.content]));
     await mapWithConcurrency(refs, UPLOAD_CONCURRENCY, async (ref) => {
@@ -225,10 +262,10 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       projectSettings: providerSettings(project),
       meta: {
         deployxDeploymentId: deploymentId,
-        githubCommitSha: commit.sha,
+        githubCommitSha: commitSha,
         githubCommitRef: ref,
-        githubCommitMessage: commit.message.slice(0, 200),
-        githubCommitAuthorLogin: commit.author,
+        githubCommitMessage: (commitMsg ?? "").slice(0, 200),
+        githubCommitAuthorLogin: commitAuthor ?? "git",
         githubRepo: project.repo_name,
         githubOrg: project.repo_owner,
       },
@@ -241,12 +278,18 @@ export async function runDeployment(deploymentId: string): Promise<void> {
         provider_deployment_id: created.id,
         status,
         url: ensureUrl(created.url),
-        inspector_url: created.inspectorUrl ?? null,
+        inspector_url: null,
         build_started_at: new Date().toISOString(),
       })
       .eq("id", deploymentId);
-    await admin.from("projects").update({ latest_deployment_status: status }).eq("id", project.id);
-    await appendLog(deploymentId, "Build started on infrastructure provider (Vercel)", "info");
+
+    const projectUpdate: Record<string, unknown> = { latest_deployment_status: status };
+    if (status === "ready") {
+      projectUpdate.production_deployment_id = deploymentId;
+      projectUpdate.production_url = ensureUrl(created.url);
+    }
+    await admin.from("projects").update(projectUpdate).eq("id", project.id);
+    await appendLog(deploymentId, "Build started on Vivexa DeployX engine", "info");
   } catch (error) {
     const publicMessage =
       error instanceof PublicError ? error.message : toPublicVercelError(error, "Deployment failed").message;
@@ -286,7 +329,11 @@ export async function syncDeployment(deployment: Deployment): Promise<Deployment
     const productionUrl = ensureUrl((domain as { name: string } | null)?.name ?? remote.alias?.[0] ?? remote.url);
     await admin
       .from("projects")
-      .update({ latest_deployment_status: status, production_url: productionUrl })
+      .update({
+        latest_deployment_status: status,
+        production_url: productionUrl,
+        production_deployment_id: deployment.id,
+      })
       .eq("id", proj.id);
     await appendLog(deployment.id, "Deployment ready", "success");
     await createNotification(deployment.user_id, {
