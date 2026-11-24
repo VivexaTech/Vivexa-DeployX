@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/misc";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, Alert } from "@/components/ui/states";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { ActionButton } from "@/components/admin/action-form";
@@ -68,6 +68,13 @@ export default async function AdminVercelAccountsPage() {
           />
         }
       />
+
+      {accountsRes.error && (
+        <Alert tone="warning" className="mb-6">
+          <strong>Database table not found:</strong> The <code>vercel_accounts</code> table has not been created yet in your Supabase database.
+          Please execute <code>supabase/migrations/0004_multi_vercel_accounts.sql</code> in your Supabase SQL Editor to activate multi-account storage.
+        </Alert>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

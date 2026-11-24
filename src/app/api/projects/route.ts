@@ -37,23 +37,31 @@ export const POST = withUser(
     const admin = createAdminClient();
 
     // Look up assigned Vercel account for this user, or platform default
-    const { data: userProfile } = await admin
-      .from("profiles")
-      .select("vercel_account_id")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    let assignedVercelAccountId = (userProfile as { vercel_account_id?: string | null } | null)?.vercel_account_id || null;
-    if (!assignedVercelAccountId) {
-      const { data: defaultAccount } = await admin
-        .from("vercel_accounts")
-        .select("id")
-        .eq("is_default", true)
-        .eq("is_active", true)
+    let assignedVercelAccountId: string | null = null;
+    try {
+      const { data: userProfile, error: profileErr } = await admin
+        .from("profiles")
+        .select("vercel_account_id")
+        .eq("id", user.id)
         .maybeSingle();
-      if (defaultAccount) {
-        assignedVercelAccountId = (defaultAccount as { id: string }).id;
+
+      if (!profileErr && userProfile) {
+        assignedVercelAccountId = (userProfile as { vercel_account_id?: string | null }).vercel_account_id || null;
       }
+
+      if (!assignedVercelAccountId) {
+        const { data: defaultAccount, error: accErr } = await admin
+          .from("vercel_accounts")
+          .select("id")
+          .eq("is_default", true)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (!accErr && defaultAccount) {
+          assignedVercelAccountId = (defaultAccount as { id: string }).id;
+        }
+      }
+    } catch {
+      // Ignore if multi-account schema is not yet migrated
     }
 
     const projectInsert: Record<string, unknown> = {
@@ -72,13 +80,29 @@ export const POST = withUser(
       output_directory: body.outputDirectory,
       auto_deploy: true,
       webhook_secret: generatedSecret,
-      vercel_account_id: assignedVercelAccountId,
     };
+
+    if (assignedVercelAccountId) {
+      projectInsert.vercel_account_id = assignedVercelAccountId;
+    }
 
     let { data, error } = await admin.from("projects").insert(projectInsert).select("*").single();
 
-    if (error && error.code === "42703") {
-      // Fallback if migrations have not yet been executed in Postgres
+    // Fallback if migrations (0003 or 0004) have not yet been executed in Postgres
+    const isMissingSchema = (err?: { code?: string; message?: string } | null) => {
+      if (!err) return false;
+      const code = err.code ?? "";
+      const msg = err.message?.toLowerCase() ?? "";
+      return (
+        ["PGRST205", "PGRST204", "PGRST200", "42P01", "42703"].includes(code) ||
+        msg.includes("schema cache") ||
+        msg.includes("does not exist") ||
+        msg.includes("column")
+      );
+    };
+
+    if (error && isMissingSchema(error)) {
+      console.warn("[project create] Retrying insert without migration 0003/0004 columns:", error.message || error.code);
       delete projectInsert.auto_deploy;
       delete projectInsert.webhook_secret;
       delete projectInsert.vercel_account_id;
@@ -87,7 +111,24 @@ export const POST = withUser(
       error = retry.error;
     }
 
-    if (error || !data) throw new PublicError("Could not create project.", 500);
+    // Fallback if slug collision happened
+    if (error && error.code === "23505") {
+      console.warn("[project create] Slug collision, retrying with random suffix");
+      projectInsert.slug = `${projectInsert.slug}-${Date.now().toString(36)}`;
+      const retrySlug = await admin.from("projects").insert(projectInsert).select("*").single();
+      data = retrySlug.data;
+      error = retrySlug.error;
+    }
+
+    if (error || !data) {
+      console.error("[project create error]", {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+      });
+      throw new PublicError(error?.message ? `Could not create project: ${error.message}` : "Could not create project.", 500);
+    }
     const project = data as Project;
 
     // Automatically attempt GitHub webhook registration in the background

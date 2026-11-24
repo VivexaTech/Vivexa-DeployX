@@ -36,7 +36,11 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
     db.from("vercel_accounts").select("id, name, team_id, is_default, is_active").order("is_default", { ascending: false }).order("name"),
   ]);
   const subscriptions = (subsRes.data as (Subscription & { plan: { name: string } | null })[]) ?? [];
-  const projects = (projectsRes.data as (Project & { vercel_account?: { name: string; team_id: string | null } | null })[]) ?? [];
+  let projects = (projectsRes.data as (Project & { vercel_account?: { name: string; team_id: string | null } | null })[]) ?? [];
+  if (projectsRes.error) {
+    const fallback = await db.from("projects").select("*").eq("user_id", id).order("created_at", { ascending: false });
+    projects = (fallback.data as Project[]) ?? [];
+  }
   const payments = (paymentsRes.data as (Payment & { plan: { name: string } | null })[]) ?? [];
   const plans = (plansRes.data as Pick<Plan, "id" | "name" | "slug">[]) ?? [];
   const github = githubRes.data as { username: string } | null;

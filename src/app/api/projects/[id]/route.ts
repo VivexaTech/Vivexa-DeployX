@@ -59,7 +59,19 @@ export const PATCH = withUser({ schema: projectSettingsSchema }, async ({ user, 
     .select("*")
     .single();
 
-  if (error && error.code === "42703") {
+  const isMissingSchema = (err?: { code?: string; message?: string } | null) => {
+    if (!err) return false;
+    const code = err.code ?? "";
+    const msg = err.message?.toLowerCase() ?? "";
+    return (
+      ["PGRST205", "PGRST204", "PGRST200", "42P01", "42703"].includes(code) ||
+      msg.includes("schema cache") ||
+      msg.includes("does not exist") ||
+      msg.includes("column")
+    );
+  };
+
+  if (error && isMissingSchema(error)) {
     // If auto_deploy / webhook_secret columns aren't in database yet, retry without them
     delete updates.auto_deploy;
     delete updates.webhook_secret;

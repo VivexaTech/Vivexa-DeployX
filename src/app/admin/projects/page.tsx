@@ -29,7 +29,18 @@ export default async function AdminProjectsPage({ searchParams }: { searchParams
     .order("created_at", { ascending: false })
     .range(from, to);
   if (q) query = query.or(`name.ilike.%${q}%,repo_name.ilike.%${q}%,repo_owner.ilike.%${q}%`);
-  const { data, count } = await query;
+  let { data, count, error } = await query;
+  if (error) {
+    let fallback = createAdminClient()
+      .from("projects")
+      .select("*, profile:profiles(email)", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (q) fallback = fallback.or(`name.ilike.%${q}%,repo_name.ilike.%${q}%,repo_owner.ilike.%${q}%`);
+    const fbRes = await fallback;
+    data = fbRes.data;
+    count = fbRes.count;
+  }
   const rows = (data as unknown as Row[]) ?? [];
 
   return (

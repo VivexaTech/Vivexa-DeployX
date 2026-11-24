@@ -40,6 +40,8 @@ function accountToCredentials(row: AccountRow): VercelCredentials {
   }
 }
 
+type ProjectLookup = { id: string; user_id: string; vercel_account_id?: string | null };
+
 /**
  * Resolves the appropriate Vercel credentials with priority:
  * 1. Project-level assigned Vercel account
@@ -57,25 +59,48 @@ export async function resolveVercelCredentials(options: {
   // 1. Project-level lookup
   let resolvedUserId = options.userId;
   if (options.projectId) {
-    const { data: project } = await admin
-      .from("projects")
-      .select("id, user_id, vercel_account_id")
-      .eq("id", options.projectId)
-      .maybeSingle();
+    let project: ProjectLookup | null = null;
+    try {
+      const res = await admin
+        .from("projects")
+        .select("id, user_id, vercel_account_id")
+        .eq("id", options.projectId)
+        .maybeSingle();
+
+      if (!res.error && res.data) {
+        project = res.data as unknown as ProjectLookup;
+      } else {
+        const fallback = await admin
+          .from("projects")
+          .select("id, user_id")
+          .eq("id", options.projectId)
+          .maybeSingle();
+        if (fallback.data) {
+          project = fallback.data as unknown as ProjectLookup;
+        }
+      }
+    } catch {
+      // ignore
+    }
 
     if (project) {
-      if (!resolvedUserId) resolvedUserId = project.user_id;
+      const p: ProjectLookup = project;
+      if (!resolvedUserId) resolvedUserId = p.user_id;
 
-      if (project.vercel_account_id) {
-        const { data: account } = await admin
-          .from("vercel_accounts")
-          .select("*")
-          .eq("id", project.vercel_account_id)
-          .eq("is_active", true)
-          .maybeSingle();
+      if (p.vercel_account_id) {
+        try {
+          const { data: account, error: accErr } = await admin
+            .from("vercel_accounts")
+            .select("*")
+            .eq("id", p.vercel_account_id)
+            .eq("is_active", true)
+            .maybeSingle();
 
-        if (account) {
-          return accountToCredentials(account as AccountRow);
+          if (!accErr && account) {
+            return accountToCredentials(account as AccountRow);
+          }
+        } catch {
+          // ignore
         }
       }
     }
@@ -83,49 +108,61 @@ export async function resolveVercelCredentials(options: {
 
   // 2. User-level lookup
   if (resolvedUserId) {
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("id, vercel_account_id")
-      .eq("id", resolvedUserId)
-      .maybeSingle();
-
-    if (profile?.vercel_account_id) {
-      const { data: account } = await admin
-        .from("vercel_accounts")
-        .select("*")
-        .eq("id", profile.vercel_account_id)
-        .eq("is_active", true)
+    try {
+      const { data: profile, error: profErr } = await admin
+        .from("profiles")
+        .select("id, vercel_account_id")
+        .eq("id", resolvedUserId)
         .maybeSingle();
 
-      if (account) {
-        return accountToCredentials(account as AccountRow);
+      if (!profErr && profile?.vercel_account_id) {
+        const { data: account, error: accErr } = await admin
+          .from("vercel_accounts")
+          .select("*")
+          .eq("id", profile.vercel_account_id)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!accErr && account) {
+          return accountToCredentials(account as AccountRow);
+        }
       }
+    } catch {
+      // ignore
     }
   }
 
   // 3. Platform default active account
-  const { data: defaultAccount } = await admin
-    .from("vercel_accounts")
-    .select("*")
-    .eq("is_default", true)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const { data: defaultAccount, error: defErr } = await admin
+      .from("vercel_accounts")
+      .select("*")
+      .eq("is_default", true)
+      .eq("is_active", true)
+      .maybeSingle();
 
-  if (defaultAccount) {
-    return accountToCredentials(defaultAccount as AccountRow);
+    if (!defErr && defaultAccount) {
+      return accountToCredentials(defaultAccount as AccountRow);
+    }
+  } catch {
+    // ignore
   }
 
   // 4. Any active account in database
-  const { data: anyAccount } = await admin
-    .from("vercel_accounts")
-    .select("*")
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  try {
+    const { data: anyAccount, error: anyErr } = await admin
+      .from("vercel_accounts")
+      .select("*")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  if (anyAccount) {
-    return accountToCredentials(anyAccount as AccountRow);
+    if (!anyErr && anyAccount) {
+      return accountToCredentials(anyAccount as AccountRow);
+    }
+  } catch {
+    // ignore
   }
 
   // 5. Global Environment fallback
