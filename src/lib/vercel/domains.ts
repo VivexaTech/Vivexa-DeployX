@@ -1,37 +1,62 @@
 import "server-only";
 import { vercelFetch } from "@/lib/vercel/client";
+import type { VercelCredentials } from "@/lib/vercel/accounts";
 import type { VercelDomainConfig, VercelProjectDomain } from "@/lib/vercel/types";
 import type { DnsRecord } from "@/types/database";
 
-export async function addProjectDomain(projectId: string, name: string): Promise<VercelProjectDomain> {
+export async function addProjectDomain(
+  projectId: string,
+  name: string,
+  credentials?: VercelCredentials,
+): Promise<VercelProjectDomain> {
   return vercelFetch<VercelProjectDomain>(`/v10/projects/${encodeURIComponent(projectId)}/domains`, {
     method: "POST",
     body: JSON.stringify({ name }),
+    accountCredentials: credentials,
   });
 }
 
-export async function getProjectDomain(projectId: string, name: string): Promise<VercelProjectDomain> {
+export async function getProjectDomain(
+  projectId: string,
+  name: string,
+  credentials?: VercelCredentials,
+): Promise<VercelProjectDomain> {
   return vercelFetch<VercelProjectDomain>(
     `/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(name)}`,
+    { accountCredentials: credentials },
   );
 }
 
-export async function verifyProjectDomain(projectId: string, name: string): Promise<VercelProjectDomain> {
+export async function verifyProjectDomain(
+  projectId: string,
+  name: string,
+  credentials?: VercelCredentials,
+): Promise<VercelProjectDomain> {
   return vercelFetch<VercelProjectDomain>(
     `/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(name)}/verify`,
-    { method: "POST" },
+    { method: "POST", accountCredentials: credentials },
   );
 }
 
-export async function removeProjectDomain(projectId: string, name: string): Promise<void> {
+export async function removeProjectDomain(
+  projectId: string,
+  name: string,
+  credentials?: VercelCredentials,
+): Promise<void> {
   await vercelFetch<unknown>(`/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(name)}`, {
     method: "DELETE",
+    accountCredentials: credentials,
   });
 }
 
-export async function getDomainConfig(name: string, projectId: string): Promise<VercelDomainConfig> {
+export async function getDomainConfig(
+  name: string,
+  projectId: string,
+  credentials?: VercelCredentials,
+): Promise<VercelDomainConfig> {
   return vercelFetch<VercelDomainConfig>(
     `/v6/domains/${encodeURIComponent(name)}/config?projectIdOrName=${encodeURIComponent(projectId)}`,
+    { accountCredentials: credentials },
   );
 }
 

@@ -35,6 +35,27 @@ export const POST = withUser(
 
     const generatedSecret = generateWebhookSecret();
     const admin = createAdminClient();
+
+    // Look up assigned Vercel account for this user, or platform default
+    const { data: userProfile } = await admin
+      .from("profiles")
+      .select("vercel_account_id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    let assignedVercelAccountId = (userProfile as { vercel_account_id?: string | null } | null)?.vercel_account_id || null;
+    if (!assignedVercelAccountId) {
+      const { data: defaultAccount } = await admin
+        .from("vercel_accounts")
+        .select("id")
+        .eq("is_default", true)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (defaultAccount) {
+        assignedVercelAccountId = (defaultAccount as { id: string }).id;
+      }
+    }
+
     const projectInsert: Record<string, unknown> = {
       user_id: user.id,
       name: body.name,
@@ -51,14 +72,16 @@ export const POST = withUser(
       output_directory: body.outputDirectory,
       auto_deploy: true,
       webhook_secret: generatedSecret,
+      vercel_account_id: assignedVercelAccountId,
     };
 
     let { data, error } = await admin.from("projects").insert(projectInsert).select("*").single();
 
     if (error && error.code === "42703") {
-      // Fallback if migration 0003 has not yet been executed in Postgres
+      // Fallback if migrations have not yet been executed in Postgres
       delete projectInsert.auto_deploy;
       delete projectInsert.webhook_secret;
+      delete projectInsert.vercel_account_id;
       const retry = await admin.from("projects").insert(projectInsert).select("*").single();
       data = retry.data;
       error = retry.error;

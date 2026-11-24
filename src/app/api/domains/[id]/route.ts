@@ -3,6 +3,7 @@ import { withUser } from "@/lib/security/api";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { integrations } from "@/lib/env";
 import { removeProjectDomain } from "@/lib/vercel/domains";
+import { resolveVercelCredentials } from "@/lib/vercel/accounts";
 import { toPublicVercelError, VercelApiError } from "@/lib/vercel/client";
 import { PublicError } from "@/lib/utils/sanitize";
 import type { Domain, Project } from "@/types/database";
@@ -17,10 +18,11 @@ export const DELETE = withUser({}, async ({ user, params }) => {
     .maybeSingle();
   if (!data) throw new PublicError("Domain not found", 404);
   const domain = data as Domain & { project: Pick<Project, "provider_project_id"> | null };
+  const credentials = await resolveVercelCredentials({ projectId: domain.project_id, userId: user.id }).catch(() => undefined);
 
-  if (domain.project?.provider_project_id && integrations.vercel()) {
+  if (domain.project?.provider_project_id && (integrations.vercel() || credentials)) {
     try {
-      await removeProjectDomain(domain.project.provider_project_id, domain.name);
+      await removeProjectDomain(domain.project.provider_project_id, domain.name, credentials);
     } catch (error) {
       if (!(error instanceof VercelApiError && error.status === 404)) {
         throw toPublicVercelError(error, "Could not remove the domain");

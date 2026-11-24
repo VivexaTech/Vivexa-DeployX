@@ -1,5 +1,6 @@
 import "server-only";
 import { vercelFetch } from "@/lib/vercel/client";
+import type { VercelCredentials } from "@/lib/vercel/accounts";
 import type { VercelDeployment, VercelEvent, VercelFileRef, VercelReadyState } from "@/lib/vercel/types";
 import type { DeploymentStatus } from "@/types/database";
 
@@ -23,7 +24,7 @@ export function mapReadyState(state: VercelReadyState | string | undefined): Dep
 }
 
 /** Uploads a single file to the provider's content-addressed file store. */
-export async function uploadFile(content: Buffer, sha: string): Promise<void> {
+export async function uploadFile(content: Buffer, sha: string, credentials?: VercelCredentials): Promise<void> {
   await vercelFetch<unknown>("/v2/files", {
     method: "POST",
     rawBody: content,
@@ -32,6 +33,7 @@ export async function uploadFile(content: Buffer, sha: string): Promise<void> {
       "Content-Length": String(content.length),
       "x-vercel-digest": sha,
     },
+    accountCredentials: credentials,
   });
 }
 
@@ -49,7 +51,10 @@ export type CreateDeploymentInput = {
   };
 };
 
-export async function createVercelDeployment(input: CreateDeploymentInput): Promise<VercelDeployment> {
+export async function createVercelDeployment(
+  input: CreateDeploymentInput,
+  credentials?: VercelCredentials,
+): Promise<VercelDeployment> {
   return vercelFetch<VercelDeployment>("/v13/deployments?skipAutoDetectionConfirmation=1", {
     method: "POST",
     body: JSON.stringify({
@@ -60,16 +65,20 @@ export async function createVercelDeployment(input: CreateDeploymentInput): Prom
       meta: input.meta,
       projectSettings: input.projectSettings,
     }),
+    accountCredentials: credentials,
   });
 }
 
-export async function getVercelDeployment(id: string): Promise<VercelDeployment> {
-  return vercelFetch<VercelDeployment>(`/v13/deployments/${encodeURIComponent(id)}`);
+export async function getVercelDeployment(id: string, credentials?: VercelCredentials): Promise<VercelDeployment> {
+  return vercelFetch<VercelDeployment>(`/v13/deployments/${encodeURIComponent(id)}`, {
+    accountCredentials: credentials,
+  });
 }
 
-export async function getVercelDeploymentEvents(id: string): Promise<VercelEvent[]> {
+export async function getVercelDeploymentEvents(id: string, credentials?: VercelCredentials): Promise<VercelEvent[]> {
   const events = await vercelFetch<VercelEvent[] | null>(
     `/v3/deployments/${encodeURIComponent(id)}/events?builds=1&limit=-1&direction=forward`,
+    { accountCredentials: credentials },
   );
   return Array.isArray(events) ? events : [];
 }

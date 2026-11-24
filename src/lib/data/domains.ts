@@ -9,6 +9,7 @@ import {
   verifyProjectDomain,
 } from "@/lib/vercel/domains";
 import { VercelApiError } from "@/lib/vercel/client";
+import type { VercelCredentials } from "@/lib/vercel/accounts";
 import type { VercelDomainConfig, VercelProjectDomain } from "@/lib/vercel/types";
 import type { Domain, DomainStatus } from "@/types/database";
 
@@ -22,15 +23,20 @@ export function statusFromProvider(domain: VercelProjectDomain, config: VercelDo
  * Re-checks a domain with the provider and persists the result. Emits a
  * notification when a domain transitions to verified or invalid.
  */
-export async function refreshDomain(domain: Domain, providerProjectId: string, userTriggered: boolean): Promise<Domain> {
+export async function refreshDomain(
+  domain: Domain,
+  providerProjectId: string,
+  userTriggered: boolean,
+  credentials?: VercelCredentials,
+): Promise<Domain> {
   const admin = createAdminClient();
   await admin.from("domains").update({ status: "verifying" }).eq("id", domain.id);
 
   let projectDomain: VercelProjectDomain;
   try {
-    projectDomain = await getProjectDomain(providerProjectId, domain.name);
+    projectDomain = await getProjectDomain(providerProjectId, domain.name, credentials);
     if (!projectDomain.verified) {
-      projectDomain = await verifyProjectDomain(providerProjectId, domain.name).catch((error: unknown) => {
+      projectDomain = await verifyProjectDomain(providerProjectId, domain.name, credentials).catch((error: unknown) => {
         if (error instanceof VercelApiError && error.status < 500) return projectDomain;
         throw error;
       });
@@ -40,7 +46,7 @@ export async function refreshDomain(domain: Domain, providerProjectId: string, u
     throw error;
   }
 
-  const config = await getDomainConfig(domain.name, providerProjectId).catch(() => null);
+  const config = await getDomainConfig(domain.name, providerProjectId, credentials).catch(() => null);
   const status = statusFromProvider(projectDomain, config);
   // A user-requested check that doesn't verify means DNS doesn't match yet.
   const finalStatus: DomainStatus = userTriggered && status !== "verified" ? "invalid" : status;

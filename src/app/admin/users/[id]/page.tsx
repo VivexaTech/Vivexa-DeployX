@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { ActionButton, ActionForm } from "@/components/admin/action-form";
-import { assignPlanAction, changeRoleAction, setUserStatusAction } from "../../actions";
+import { assignPlanAction, assignUserVercelAccountAction, changeRoleAction, setUserStatusAction } from "../../actions";
 import { requireAdmin } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canSuspend, isSuperAdmin } from "@/lib/permissions";
@@ -27,18 +27,21 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
   if (!data) notFound();
   const user = data as Profile;
 
-  const [subsRes, projectsRes, paymentsRes, plansRes, githubRes] = await Promise.all([
+  const [subsRes, projectsRes, paymentsRes, plansRes, githubRes, vercelRes] = await Promise.all([
     db.from("subscriptions").select("*, plan:plans(name)").eq("user_id", id).order("created_at", { ascending: false }).limit(20),
-    db.from("projects").select("*").eq("user_id", id).order("created_at", { ascending: false }),
+    db.from("projects").select("*, vercel_account:vercel_accounts(name, team_id)").eq("user_id", id).order("created_at", { ascending: false }),
     db.from("payments").select("*, plan:plans(name)").eq("user_id", id).order("created_at", { ascending: false }).limit(20),
     db.from("plans").select("id, name, slug").order("display_order"),
     db.from("github_connections").select("username").eq("user_id", id).maybeSingle(),
+    db.from("vercel_accounts").select("id, name, team_id, is_default, is_active").order("is_default", { ascending: false }).order("name"),
   ]);
   const subscriptions = (subsRes.data as (Subscription & { plan: { name: string } | null })[]) ?? [];
-  const projects = (projectsRes.data as Project[]) ?? [];
+  const projects = (projectsRes.data as (Project & { vercel_account?: { name: string; team_id: string | null } | null })[]) ?? [];
   const payments = (paymentsRes.data as (Payment & { plan: { name: string } | null })[]) ?? [];
   const plans = (plansRes.data as Pick<Plan, "id" | "name" | "slug">[]) ?? [];
   const github = githubRes.data as { username: string } | null;
+  const vercelAccounts = (vercelRes.data as { id: string; name: string; team_id: string | null; is_default: boolean; is_active: boolean }[]) ?? [];
+  const assignedVercelAccount = vercelAccounts.find((a) => a.id === user.vercel_account_id);
   const active = subscriptions.find((s) => s.status === "active");
 
   const isSelf = admin.id === user.id;
@@ -87,6 +90,17 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
               items={[
                 { label: "Status", value: <StatusBadge status={user.status} /> },
                 { label: "Role", value: <Badge tone={user.role === "user" ? "neutral" : "accent"}>{user.role.replace("_", " ")}</Badge> },
+                {
+                  label: "Assigned Vercel account",
+                  value: assignedVercelAccount ? (
+                    <span className="font-medium text-foreground">
+                      {assignedVercelAccount.name}{" "}
+                      {assignedVercelAccount.team_id && <code className="text-xs text-muted">({assignedVercelAccount.team_id})</code>}
+                    </span>
+                  ) : (
+                    <span className="text-muted">Platform Default</span>
+                  ),
+                },
                 { label: "Current plan", value: active?.plan?.name ?? "Default plan" },
                 { label: "Plan valid until", value: active?.current_period_end ? formatDate(active.current_period_end) : "No expiry" },
                 { label: "GitHub", value: github ? `@${github.username}` : "Not connected" },
@@ -148,6 +162,46 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
           </Card>
         </div>
 
+        <Card>
+          <CardHeader
+            title="Vercel account & team assignment"
+            description="Assign a dedicated Vercel account/team to this user so their projects build on separate infrastructure and do not consume limits on other accounts."
+          />
+          <CardContent>
+            <ActionForm action={assignUserVercelAccountAction} submitLabel="Save Vercel assignment">
+              <input type="hidden" name="userId" value={user.id} />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Vercel Account"
+                  htmlFor="vercelAccountId"
+                  hint="Select a dedicated Vercel account for this user"
+                >
+                  <Select id="vercelAccountId" name="vercelAccountId" defaultValue={user.vercel_account_id ?? "default"}>
+                    <option value="default">Platform Default (Shared / Global)</option>
+                    {vercelAccounts.map((va) => (
+                      <option key={va.id} value={va.id}>
+                        {va.name} {va.team_id ? `(${va.team_id})` : "(Personal)"} {va.is_default ? "★ Default" : ""} {!va.is_active ? "[Inactive]" : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                <div className="flex items-center pt-6">
+                  <label className="flex items-center gap-2 text-[13px] text-foreground">
+                    <input
+                      type="checkbox"
+                      name="reassignProjects"
+                      defaultChecked={true}
+                      className="h-4 w-4"
+                    />
+                    Also update user&apos;s existing projects ({projects.length}) to this account
+                  </label>
+                </div>
+              </div>
+            </ActionForm>
+          </CardContent>
+        </Card>
+
         <Card className="overflow-hidden">
           <CardHeader title="Subscriptions" />
           {subscriptions.length === 0 ? (
@@ -193,6 +247,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
                       <p className="truncate text-[13px] font-medium text-foreground">{p.name}</p>
                       <p className="truncate text-xs text-muted">
                         {p.repo_owner}/{p.repo_name}
+                        {p.vercel_account ? ` · Vercel: ${p.vercel_account.name}` : ""}
                       </p>
                     </div>
                     <StatusBadge status={p.latest_deployment_status} />

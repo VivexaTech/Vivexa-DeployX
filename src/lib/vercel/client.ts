@@ -1,13 +1,15 @@
 import "server-only";
 import { integrations, serverConfig } from "@/lib/env";
 import { PublicError } from "@/lib/utils/sanitize";
+import type { VercelCredentials } from "@/lib/vercel/accounts";
 
 const VERCEL_API = "https://api.vercel.com";
 
 export const VERCEL_NOT_CONFIGURED =
   "Deployment infrastructure is not configured. Configure deployment credentials to enable real deployments.";
 
-export function assertVercelConfigured(): void {
+export function assertVercelConfigured(credentials?: VercelCredentials): void {
+  if (credentials?.token) return;
   if (!integrations.vercel()) throw new PublicError(VERCEL_NOT_CONFIGURED, 503);
 }
 
@@ -22,21 +24,32 @@ export class VercelApiError extends Error {
   }
 }
 
-function withTeam(path: string): string {
-  const teamId = serverConfig.vercelTeamId();
+function withTeam(path: string, credentials?: VercelCredentials): string {
+  const teamId = credentials && credentials.teamId !== undefined
+    ? credentials.teamId
+    : serverConfig.vercelTeamId();
   if (!teamId) return path;
   return `${path}${path.includes("?") ? "&" : "?"}teamId=${encodeURIComponent(teamId)}`;
 }
 
+export type VercelFetchInit = Omit<RequestInit, "credentials"> & {
+  rawBody?: Buffer;
+  accountCredentials?: VercelCredentials;
+};
+
 /** Authenticated request to the Vercel REST API. Token never leaves the server. */
-export async function vercelFetch<T>(path: string, init: RequestInit & { rawBody?: Buffer } = {}): Promise<T> {
-  assertVercelConfigured();
-  const { rawBody, ...rest } = init;
-  const response = await fetch(`${VERCEL_API}${withTeam(path)}`, {
+export async function vercelFetch<T>(path: string, init: VercelFetchInit = {}): Promise<T> {
+  const { rawBody, accountCredentials, ...rest } = init;
+  const token = accountCredentials?.token || process.env.VERCEL_TOKEN;
+  if (!token) {
+    throw new PublicError(VERCEL_NOT_CONFIGURED, 503);
+  }
+
+  const response = await fetch(`${VERCEL_API}${withTeam(path, accountCredentials)}`, {
     ...rest,
     body: rawBody ? new Uint8Array(rawBody) : rest.body,
     headers: {
-      Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       ...(rawBody ? {} : { "Content-Type": "application/json" }),
       ...rest.headers,
     },

@@ -15,14 +15,17 @@ import type { Project } from "@/types/database";
 
 export const metadata: Metadata = { title: "Projects" };
 
-type Row = Project & { profile: { email: string } | null };
+type Row = Project & {
+  profile: { email: string } | null;
+  vercel_account?: { name: string; team_id: string | null } | null;
+};
 
 export default async function AdminProjectsPage({ searchParams }: { searchParams: Promise<ListParams> }) {
   await requireAdmin();
   const { page, q, from, to, pageSize } = parseListParams(await searchParams);
   let query = createAdminClient()
     .from("projects")
-    .select("*, profile:profiles(email)", { count: "exact" })
+    .select("*, profile:profiles(email), vercel_account:vercel_accounts(name, team_id)", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(from, to);
   if (q) query = query.or(`name.ilike.%${q}%,repo_name.ilike.%${q}%,repo_owner.ilike.%${q}%`);
@@ -42,6 +45,7 @@ export default async function AdminProjectsPage({ searchParams }: { searchParams
               <tr>
                 <TH>Project</TH>
                 <TH>Owner</TH>
+                <TH>Vercel Account</TH>
                 <TH>Framework</TH>
                 <TH>Status</TH>
                 <TH>Last deploy</TH>
@@ -66,6 +70,20 @@ export default async function AdminProjectsPage({ searchParams }: { searchParams
                     <Link href={`/admin/users/${p.user_id}`} className="hover:underline">
                       {p.profile?.email ?? "—"}
                     </Link>
+                  </TD>
+                  <TD>
+                    {p.vercel_account ? (
+                      <div>
+                        <span className="text-[13px] font-medium text-foreground">{p.vercel_account.name}</span>
+                        {p.vercel_account.team_id ? (
+                          <p className="text-xs text-muted">{p.vercel_account.team_id}</p>
+                        ) : (
+                          <p className="text-xs text-muted">Personal</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted">Platform Default</span>
+                    )}
                   </TD>
                   <TD className="text-muted">{getFramework(p.framework).name}</TD>
                   <TD>

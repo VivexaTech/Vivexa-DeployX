@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { integrations } from "@/lib/env";
 import { getFramework } from "@/lib/frameworks";
 import { toPublicVercelError } from "@/lib/vercel/client";
+import { resolveVercelCredentials } from "@/lib/vercel/accounts";
 import { deleteVercelProject, updateVercelProject } from "@/lib/vercel/projects";
 import { removeProjectDomain } from "@/lib/vercel/domains";
 import { PublicError } from "@/lib/utils/sanitize";
@@ -13,16 +14,21 @@ import type { Project } from "@/types/database";
 
 export const PATCH = withUser({ schema: projectSettingsSchema }, async ({ user, body, params }) => {
   const project = await getOwnedProject(user.id, params.id);
+  const credentials = await resolveVercelCredentials({ projectId: project.id, userId: user.id }).catch(() => undefined);
 
-  if (project.provider_project_id && integrations.vercel()) {
+  if (project.provider_project_id && (integrations.vercel() || credentials)) {
     try {
-      await updateVercelProject(project.provider_project_id, {
-        framework: getFramework(body.framework).providerSlug,
-        buildCommand: body.buildCommand,
-        installCommand: body.installCommand,
-        outputDirectory: body.outputDirectory,
-        rootDirectory: body.rootDirectory || null,
-      });
+      await updateVercelProject(
+        project.provider_project_id,
+        {
+          framework: getFramework(body.framework).providerSlug,
+          buildCommand: body.buildCommand,
+          installCommand: body.installCommand,
+          outputDirectory: body.outputDirectory,
+          rootDirectory: body.rootDirectory || null,
+        },
+        credentials,
+      );
     } catch (error) {
       throw toPublicVercelError(error, "Could not update infrastructure project settings");
     }
@@ -75,14 +81,15 @@ export const PATCH = withUser({ schema: projectSettingsSchema }, async ({ user, 
 export const DELETE = withUser({ rateLimit: { key: "project-delete", limit: 10, windowMs: 60_000 } }, async ({ user, params }) => {
   const project = await getOwnedProject(user.id, params.id);
   const admin = createAdminClient();
+  const credentials = await resolveVercelCredentials({ projectId: project.id, userId: user.id }).catch(() => undefined);
 
-  if (project.provider_project_id && integrations.vercel()) {
+  if (project.provider_project_id && (integrations.vercel() || credentials)) {
     const { data: domains } = await admin.from("domains").select("name").eq("project_id", project.id);
     for (const domain of (domains as { name: string }[]) ?? []) {
-      await removeProjectDomain(project.provider_project_id, domain.name).catch(() => undefined);
+      await removeProjectDomain(project.provider_project_id, domain.name, credentials).catch(() => undefined);
     }
     try {
-      await deleteVercelProject(project.provider_project_id);
+      await deleteVercelProject(project.provider_project_id, credentials);
     } catch (error) {
       throw toPublicVercelError(error, "Could not remove the infrastructure project");
     }

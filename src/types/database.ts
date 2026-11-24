@@ -17,6 +17,19 @@ export interface Profile {
   avatar_url: string | null;
   role: UserRole;
   status: AccountStatus;
+  vercel_account_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VercelAccount {
+  id: string;
+  name: string;
+  token_encrypted?: string;
+  team_id: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -213,6 +226,7 @@ export interface Project {
   auto_deploy?: boolean;
   webhook_secret?: string | null;
   production_deployment_id?: string | null;
+  vercel_account_id?: string | null;
   created_at: string;
   updated_at: string;
 }

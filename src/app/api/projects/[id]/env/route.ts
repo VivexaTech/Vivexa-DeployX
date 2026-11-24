@@ -8,6 +8,7 @@ import { encryptSecret } from "@/lib/utils/crypto";
 import { integrations } from "@/lib/env";
 import { PublicError } from "@/lib/utils/sanitize";
 import { toPublicVercelError } from "@/lib/vercel/client";
+import { resolveVercelCredentials } from "@/lib/vercel/accounts";
 import { deleteVercelEnv, upsertVercelEnv } from "@/lib/vercel/projects";
 import type { VercelEnvTarget } from "@/lib/vercel/types";
 
@@ -26,11 +27,12 @@ export const POST = withUser(
       throw new PublicError("ENCRYPTION_KEY is not configured, so environment variables can't be stored securely.", 503);
     }
     const project = await getOwnedProject(user.id, params.id);
+    const credentials = await resolveVercelCredentials({ projectId: project.id, userId: user.id }).catch(() => undefined);
 
     let providerEnvId: string | null = null;
-    if (project.provider_project_id && integrations.vercel()) {
+    if (project.provider_project_id && (integrations.vercel() || credentials)) {
       try {
-        providerEnvId = (await upsertVercelEnv(project.provider_project_id, body.key, body.value, body.targets as VercelEnvTarget[])).id;
+        providerEnvId = (await upsertVercelEnv(project.provider_project_id, body.key, body.value, body.targets as VercelEnvTarget[], credentials)).id;
       } catch (error) {
         throw toPublicVercelError(error, "Could not sync the variable to the infrastructure provider");
       }
@@ -59,6 +61,7 @@ export const POST = withUser(
 
 export const DELETE = withUser({ schema: z.object({ envId: z.string().uuid() }) }, async ({ user, body, params }) => {
   const project = await getOwnedProject(user.id, params.id);
+  const credentials = await resolveVercelCredentials({ projectId: project.id, userId: user.id }).catch(() => undefined);
   const admin = createAdminClient();
   const { data } = await admin
     .from("environment_variables")
@@ -69,8 +72,8 @@ export const DELETE = withUser({ schema: z.object({ envId: z.string().uuid() }) 
   if (!data) throw new PublicError("Variable not found", 404);
 
   const row = data as { id: string; provider_env_id: string | null };
-  if (row.provider_env_id && project.provider_project_id && integrations.vercel()) {
-    await deleteVercelEnv(project.provider_project_id, row.provider_env_id).catch((error) => {
+  if (row.provider_env_id && project.provider_project_id && (integrations.vercel() || credentials)) {
+    await deleteVercelEnv(project.provider_project_id, row.provider_env_id, credentials).catch((error) => {
       throw toPublicVercelError(error, "Could not remove the variable from the infrastructure provider");
     });
   }

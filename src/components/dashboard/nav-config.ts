@@ -56,6 +56,7 @@ export const ADMIN_NAV: NavSection[] = [
       { href: "/admin/projects", label: "Projects", icon: "projects" },
       { href: "/admin/deployments", label: "Deployments", icon: "deployments" },
       { href: "/admin/domains", label: "Domains", icon: "domains" },
+      { href: "/admin/vercel-accounts", label: "Vercel Accounts", icon: "admin" },
     ],
   },
   {

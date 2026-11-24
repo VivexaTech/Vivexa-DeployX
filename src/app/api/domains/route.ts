@@ -7,6 +7,7 @@ import { statusFromProvider } from "@/lib/data/domains";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { serverConfig } from "@/lib/env";
 import { assertVercelConfigured, toPublicVercelError } from "@/lib/vercel/client";
+import { resolveVercelCredentials } from "@/lib/vercel/accounts";
 import { addProjectDomain, buildDnsRecords, buildVerificationRecords, getDomainConfig } from "@/lib/vercel/domains";
 import { PublicError } from "@/lib/utils/sanitize";
 
@@ -15,8 +16,9 @@ const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app", "dashboard", 
 export const POST = withUser(
   { schema: addDomainSchema, rateLimit: { key: "domain-add", limit: 20, windowMs: 60_000 } },
   async ({ user, body }) => {
-    assertVercelConfigured();
     const project = await getOwnedProject(user.id, body.projectId);
+    const credentials = await resolveVercelCredentials({ projectId: project.id, userId: user.id }).catch(() => undefined);
+    assertVercelConfigured(credentials);
     if (!project.provider_project_id) {
       throw new PublicError("Deploy this project at least once before adding domains.", 409);
     }
@@ -41,11 +43,11 @@ export const POST = withUser(
 
     let projectDomain;
     try {
-      projectDomain = await addProjectDomain(project.provider_project_id, name);
+      projectDomain = await addProjectDomain(project.provider_project_id, name, credentials);
     } catch (error) {
       throw toPublicVercelError(error, "Could not add the domain");
     }
-    const config = await getDomainConfig(name, project.provider_project_id).catch(() => null);
+    const config = await getDomainConfig(name, project.provider_project_id, credentials).catch(() => null);
     const status = statusFromProvider(projectDomain, config);
 
     const { data, error } = await admin

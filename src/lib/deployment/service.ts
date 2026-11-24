@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { assertGithubConfigured, getUserGithubToken } from "@/lib/github/client";
 import { downloadTarball, getLatestCommit } from "@/lib/github/repos";
 import { assertVercelConfigured, toPublicVercelError } from "@/lib/vercel/client";
+import { resolveVercelCredentials, type VercelCredentials } from "@/lib/vercel/accounts";
 import { createVercelProject, upsertVercelEnv } from "@/lib/vercel/projects";
 import {
   createVercelDeployment,
@@ -69,14 +70,14 @@ function providerSettings(project: Project) {
 }
 
 /** Creates the provider-side project on first deploy and syncs env vars. */
-async function ensureProviderProject(project: Project, deploymentId: string): Promise<string> {
+async function ensureProviderProject(project: Project, deploymentId: string, credentials?: VercelCredentials): Promise<string> {
   const admin = createAdminClient();
   let providerId = project.provider_project_id;
 
   if (!providerId) {
     const name = slugify(`${serverConfig.vercelProjectPrefix()}-${project.slug}`, 90);
     await appendLog(deploymentId, `Initializing build environment "${name}"`);
-    const created = await createVercelProject(name, providerSettings(project));
+    const created = await createVercelProject(name, providerSettings(project), credentials);
     providerId = created.id;
     await admin.from("projects").update({ provider_project_id: providerId }).eq("id", project.id);
   }
@@ -85,7 +86,7 @@ async function ensureProviderProject(project: Project, deploymentId: string): Pr
   if (envVars.length > 0) {
     await appendLog(deploymentId, `Syncing ${envVars.length} environment variable(s)`);
     for (const env of envVars) {
-      const { id } = await upsertVercelEnv(providerId, env.key, env.value, env.targets as VercelEnvTarget[]);
+      const { id } = await upsertVercelEnv(providerId, env.key, env.value, env.targets as VercelEnvTarget[], credentials);
       if (id) await admin.from("environment_variables").update({ provider_env_id: id }).eq("id", env.id);
     }
   }
@@ -109,7 +110,8 @@ export async function queueDeployment(
   projectId: string,
   options?: QueueDeploymentOptions,
 ): Promise<Deployment> {
-  assertVercelConfigured();
+  const creds = await resolveVercelCredentials({ projectId, userId }).catch(() => undefined);
+  assertVercelConfigured(creds);
   assertGithubConfigured();
 
   const settings = await getPlatformSettings();
@@ -245,13 +247,14 @@ export async function runDeployment(deploymentId: string): Promise<void> {
       "success",
     );
 
-    const providerProjectId = await ensureProviderProject(project, deploymentId);
+    const credentials = await resolveVercelCredentials({ projectId: project.id, userId: project.user_id }).catch(() => undefined);
+    const providerProjectId = await ensureProviderProject(project, deploymentId, credentials);
 
     await appendLog(deploymentId, "Uploading source to build engine");
     const refs: VercelFileRef[] = files.map((f) => ({ file: f.path, sha: sha1Hex(f.content), size: f.content.length }));
     const byPath = new Map(files.map((f) => [f.path, f.content]));
     await mapWithConcurrency(refs, UPLOAD_CONCURRENCY, async (ref) => {
-      await uploadFile(byPath.get(ref.file)!, ref.sha);
+      await uploadFile(byPath.get(ref.file)!, ref.sha, credentials);
     });
     await appendLog(deploymentId, "Upload complete", "success");
 
@@ -269,7 +272,7 @@ export async function runDeployment(deploymentId: string): Promise<void> {
         githubRepo: project.repo_name,
         githubOrg: project.repo_owner,
       },
-    });
+    }, credentials);
 
     const status = mapReadyState(created.readyState);
     await admin
@@ -300,11 +303,12 @@ export async function runDeployment(deploymentId: string): Promise<void> {
 
 /** Pulls the latest provider state for a deployment and persists transitions. */
 export async function syncDeployment(deployment: Deployment): Promise<Deployment> {
-  if (!deployment.provider_deployment_id || isTerminal(deployment.status) || !integrations.vercel()) {
+  const credentials = await resolveVercelCredentials({ projectId: deployment.project_id, userId: deployment.user_id }).catch(() => undefined);
+  if (!deployment.provider_deployment_id || isTerminal(deployment.status) || (!integrations.vercel() && !credentials)) {
     return deployment;
   }
   const admin = createAdminClient();
-  const remote = await getVercelDeployment(deployment.provider_deployment_id);
+  const remote = await getVercelDeployment(deployment.provider_deployment_id, credentials);
   const status = mapReadyState(remote.readyState);
   if (status === deployment.status) return deployment;
 
@@ -355,13 +359,18 @@ export async function syncDeployment(deployment: Deployment): Promise<Deployment
     }
   }
 
-  if (isTerminal(status)) await persistProviderLogs(deployment.id, deployment.provider_deployment_id, proj.id);
+  if (isTerminal(status)) await persistProviderLogs(deployment.id, deployment.provider_deployment_id, proj.id, credentials);
   return (data as Deployment) ?? deployment;
 }
 
-async function persistProviderLogs(deploymentId: string, providerId: string, projectId: string): Promise<void> {
+async function persistProviderLogs(
+  deploymentId: string,
+  providerId: string,
+  projectId: string,
+  credentials?: VercelCredentials,
+): Promise<void> {
   try {
-    const events = await getVercelDeploymentEvents(providerId);
+    const events = await getVercelDeploymentEvents(providerId, credentials);
     const secrets = (await getProjectSecrets(projectId)).map((s) => s.value);
     const rows = events
       .map((event) => ({ event, text: eventText(event) }))
@@ -394,10 +403,11 @@ export async function getDeploymentLogs(deployment: Deployment): Promise<LogLine
   const stored = (data as LogLine[]) ?? [];
 
   const hasProviderLogs = stored.some((l) => l.source === "provider");
-  if (!deployment.provider_deployment_id || hasProviderLogs || !integrations.vercel()) return stored;
+  const credentials = await resolveVercelCredentials({ projectId: deployment.project_id, userId: deployment.user_id }).catch(() => undefined);
+  if (!deployment.provider_deployment_id || hasProviderLogs || (!integrations.vercel() && !credentials)) return stored;
 
   try {
-    const events = await getVercelDeploymentEvents(deployment.provider_deployment_id);
+    const events = await getVercelDeploymentEvents(deployment.provider_deployment_id, credentials);
     const secrets = (await getProjectSecrets(deployment.project_id)).map((s) => s.value);
     const live: LogLine[] = events
       .map((event) => ({ event, text: eventText(event) }))

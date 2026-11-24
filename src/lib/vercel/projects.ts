@@ -1,5 +1,6 @@
 import "server-only";
 import { vercelFetch } from "@/lib/vercel/client";
+import type { VercelCredentials } from "@/lib/vercel/accounts";
 import type { VercelEnvTarget, VercelProject } from "@/lib/vercel/types";
 
 export type ProjectSettingsInput = {
@@ -10,22 +11,35 @@ export type ProjectSettingsInput = {
   rootDirectory: string | null;
 };
 
-export async function createVercelProject(name: string, settings: ProjectSettingsInput): Promise<VercelProject> {
+export async function createVercelProject(
+  name: string,
+  settings: ProjectSettingsInput,
+  credentials?: VercelCredentials,
+): Promise<VercelProject> {
   return vercelFetch<VercelProject>("/v11/projects", {
     method: "POST",
     body: JSON.stringify({ name, ...settings }),
+    accountCredentials: credentials,
   });
 }
 
-export async function updateVercelProject(projectId: string, settings: ProjectSettingsInput): Promise<VercelProject> {
+export async function updateVercelProject(
+  projectId: string,
+  settings: ProjectSettingsInput,
+  credentials?: VercelCredentials,
+): Promise<VercelProject> {
   return vercelFetch<VercelProject>(`/v9/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH",
     body: JSON.stringify(settings),
+    accountCredentials: credentials,
   });
 }
 
-export async function deleteVercelProject(projectId: string): Promise<void> {
-  await vercelFetch<void>(`/v9/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+export async function deleteVercelProject(projectId: string, credentials?: VercelCredentials): Promise<void> {
+  await vercelFetch<void>(`/v9/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+    accountCredentials: credentials,
+  });
 }
 
 export async function upsertVercelEnv(
@@ -33,12 +47,14 @@ export async function upsertVercelEnv(
   key: string,
   value: string,
   targets: VercelEnvTarget[],
+  credentials?: VercelCredentials,
 ): Promise<{ id: string | null }> {
   const result = await vercelFetch<{ created?: { id: string } | { id: string }[] }>(
     `/v10/projects/${encodeURIComponent(projectId)}/env?upsert=true`,
     {
       method: "POST",
       body: JSON.stringify({ key, value, type: "encrypted", target: targets }),
+      accountCredentials: credentials,
     },
   );
   const created = result?.created;
@@ -46,8 +62,9 @@ export async function upsertVercelEnv(
   return { id: id ?? null };
 }
 
-export async function deleteVercelEnv(projectId: string, envId: string): Promise<void> {
+export async function deleteVercelEnv(projectId: string, envId: string, credentials?: VercelCredentials): Promise<void> {
   await vercelFetch<void>(`/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(envId)}`, {
     method: "DELETE",
+    accountCredentials: credentials,
   });
 }

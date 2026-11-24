@@ -11,7 +11,9 @@ import { isValidGstin, normalizeGstin, normalizeStateCode } from "@/lib/billing/
 import { periodEnd } from "@/lib/data/subscriptions";
 import { canChangeRole, canSuspend, isSuperAdmin } from "@/lib/permissions";
 import { rateLimit } from "@/lib/security/rate-limit";
-import type { Plan, Profile, UserRole } from "@/types/database";
+import { encryptSecret, decryptSecret } from "@/lib/utils/crypto";
+import { testVercelConnection } from "@/lib/vercel/accounts";
+import type { Plan, Profile, UserRole, VercelAccount } from "@/types/database";
 
 export type AdminActionState = { error?: string; message?: string; ok?: boolean } | undefined;
 
@@ -706,4 +708,243 @@ export async function saveInvoiceSettingsAction(_prev: AdminActionState, formDat
   });
   revalidatePath("/admin/settings", "layout");
   return { ok: true, message: "Invoice details saved. They apply to invoices issued from now on." };
+}
+
+// ---------------------------------------------------------------------------
+// Vercel Multi-Account & Team Infrastructure Management
+// ---------------------------------------------------------------------------
+
+const vercelAccountSchema = z.object({
+  id: z.string().uuid().optional().or(z.literal("")),
+  name: z.string().trim().min(2, "Account name must be at least 2 characters").max(80),
+  token: z.string().trim().optional(),
+  teamId: z.string().trim().max(80).optional(),
+  isDefault: z.string().optional(),
+  isActive: z.string().optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export async function saveVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = vercelAccountSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const { id, name, token, teamId, isDefault, isActive, notes } = parsed.data;
+  const db = createAdminClient();
+  const shouldBeDefault = isDefault === "true" || isDefault === "on" || isDefault === "1";
+  const shouldBeActive = isActive !== "false" && isActive !== "0";
+
+  let tokenEncrypted: string | undefined;
+  if (token && token.trim()) {
+    tokenEncrypted = encryptSecret(token.trim());
+  } else if (!id) {
+    return fail("Vercel API token is required for new accounts.");
+  }
+
+  if (shouldBeDefault) {
+    await db.from("vercel_accounts").update({ is_default: false }).eq("is_default", true);
+  }
+
+  if (id) {
+    const updatePayload: Record<string, unknown> = {
+      name,
+      team_id: teamId || null,
+      is_default: shouldBeDefault,
+      is_active: shouldBeActive,
+      notes: notes || null,
+    };
+    if (tokenEncrypted) {
+      updatePayload.token_encrypted = tokenEncrypted;
+    }
+    const { error } = await db.from("vercel_accounts").update(updatePayload).eq("id", id);
+    if (error) return fail("Failed to update Vercel account.");
+    await recordAudit(admin.id, "VERCEL_ACCOUNT_UPDATED", "vercel_account", id, { name, teamId });
+  } else {
+    const { data, error } = await db
+      .from("vercel_accounts")
+      .insert({
+        name,
+        token_encrypted: tokenEncrypted!,
+        team_id: teamId || null,
+        is_default: shouldBeDefault,
+        is_active: shouldBeActive,
+        notes: notes || null,
+      })
+      .select("id")
+      .single();
+    if (error || !data) return fail("Failed to create Vercel account.");
+    await recordAudit(admin.id, "VERCEL_ACCOUNT_CREATED", "vercel_account", (data as { id: string }).id, { name, teamId });
+  }
+
+  revalidatePath("/admin/vercel-accounts");
+  revalidatePath("/admin/users", "layout");
+  return { ok: true, message: id ? "Vercel account updated." : "Vercel account added." };
+}
+
+export async function deleteVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = z.object({ id: uuid }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const db = createAdminClient();
+  const { error } = await db.from("vercel_accounts").delete().eq("id", parsed.data.id);
+  if (error) return fail("Could not delete Vercel account. It may be in use by active projects or users.");
+
+  await recordAudit(admin.id, "VERCEL_ACCOUNT_DELETED", "vercel_account", parsed.data.id, {});
+  revalidatePath("/admin/vercel-accounts");
+  return { ok: true, message: "Vercel account deleted." };
+}
+
+export async function toggleVercelAccountStatusAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = z.object({ id: uuid, isActive: z.enum(["true", "false"]) }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const newStatus = parsed.data.isActive === "true";
+  const db = createAdminClient();
+  const { error } = await db.from("vercel_accounts").update({ is_active: newStatus }).eq("id", parsed.data.id);
+  if (error) return fail("Could not update account status.");
+
+  await recordAudit(admin.id, "VERCEL_ACCOUNT_STATUS_TOGGLED", "vercel_account", parsed.data.id, { is_active: newStatus });
+  revalidatePath("/admin/vercel-accounts");
+  return { ok: true, message: newStatus ? "Account activated." : "Account deactivated." };
+}
+
+export async function setDefaultVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = z.object({ id: uuid }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const db = createAdminClient();
+  await db.from("vercel_accounts").update({ is_default: false }).eq("is_default", true);
+  const { error } = await db.from("vercel_accounts").update({ is_default: true, is_active: true }).eq("id", parsed.data.id);
+  if (error) return fail("Could not set account as default.");
+
+  await recordAudit(admin.id, "VERCEL_ACCOUNT_DEFAULT_SET", "vercel_account", parsed.data.id, {});
+  revalidatePath("/admin/vercel-accounts");
+  return { ok: true, message: "Account marked as platform default." };
+}
+
+export async function testVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  await requireAdmin();
+  const parsed = z
+    .object({
+      id: z.string().uuid().optional(),
+      token: z.string().trim().optional(),
+      teamId: z.string().trim().optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  let testToken = parsed.data.token;
+  let testTeamId = parsed.data.teamId;
+
+  if (parsed.data.id && (!testToken || !testToken.trim())) {
+    const db = createAdminClient();
+    const { data } = await db.from("vercel_accounts").select("token_encrypted, team_id").eq("id", parsed.data.id).maybeSingle();
+    if (!data) return fail("Account not found.");
+    try {
+      testToken = decryptSecret((data as { token_encrypted: string }).token_encrypted);
+      testTeamId = (data as { team_id: string | null }).team_id || undefined;
+    } catch {
+      return fail("Could not decrypt token.");
+    }
+  }
+
+  if (!testToken) return fail("Token is required to test connection.");
+
+  const res = await testVercelConnection(testToken, testTeamId);
+  if (!res.valid) {
+    return fail(res.error || "Connection test failed.");
+  }
+
+  const teamMsg = res.team ? ` (Team: ${res.team.name} / ${res.team.id})` : " (Personal account)";
+  return {
+    ok: true,
+    message: `Connected successfully to Vercel as @${res.user?.username || res.user?.email}${teamMsg}.`,
+  };
+}
+
+export async function assignUserVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = z
+    .object({
+      userId: uuid,
+      vercelAccountId: z.string().trim().optional(),
+      reassignProjects: z.string().optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const db = createAdminClient();
+  const target = await loadTarget(parsed.data.userId);
+  if (!target) return fail("User not found.");
+
+  const rawAccountId = parsed.data.vercelAccountId?.trim();
+  const accountId = rawAccountId && rawAccountId !== "" && rawAccountId !== "none" && rawAccountId !== "default"
+    ? rawAccountId
+    : null;
+
+  if (accountId) {
+    const { data: acc } = await db.from("vercel_accounts").select("id, name, team_id").eq("id", accountId).maybeSingle();
+    if (!acc) return fail("Selected Vercel account not found.");
+  }
+
+  const { error } = await db.from("profiles").update({ vercel_account_id: accountId }).eq("id", target.id);
+  if (error) return fail("Failed to assign Vercel account to user.");
+
+  const reassignProjects =
+    parsed.data.reassignProjects === "true" ||
+    parsed.data.reassignProjects === "on" ||
+    parsed.data.reassignProjects === "1";
+  if (reassignProjects) {
+    await db.from("projects").update({ vercel_account_id: accountId }).eq("user_id", target.id);
+  }
+
+  await recordAudit(admin.id, "USER_VERCEL_ACCOUNT_ASSIGNED", "user", target.id, {
+    vercel_account_id: accountId,
+    reassign_projects: reassignProjects,
+    user_email: target.email,
+  });
+
+  revalidatePath(`/admin/users/${target.id}`);
+  revalidatePath("/admin/users");
+  revalidatePath("/admin/projects");
+  return {
+    ok: true,
+    message: accountId
+      ? `Assigned Vercel account to ${target.email}${reassignProjects ? " and updated their existing projects." : "."}`
+      : `Reset ${target.email} to platform default Vercel account${reassignProjects ? " and updated their projects." : "."}`,
+  };
+}
+
+export async function assignProjectVercelAccountAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const admin = await requireAdmin();
+  const parsed = z
+    .object({
+      projectId: uuid,
+      vercelAccountId: z.string().trim().optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const db = createAdminClient();
+  const { data: project } = await db.from("projects").select("id, name").eq("id", parsed.data.projectId).maybeSingle();
+  if (!project) return fail("Project not found.");
+
+  const rawAccountId = parsed.data.vercelAccountId?.trim();
+  const accountId = rawAccountId && rawAccountId !== "" && rawAccountId !== "none" && rawAccountId !== "default"
+    ? rawAccountId
+    : null;
+
+  const { error } = await db.from("projects").update({ vercel_account_id: accountId }).eq("id", parsed.data.projectId);
+  if (error) return fail("Failed to update project Vercel account.");
+
+  await recordAudit(admin.id, "PROJECT_VERCEL_ACCOUNT_ASSIGNED", "project", parsed.data.projectId, {
+    vercel_account_id: accountId,
+  });
+
+  revalidatePath("/admin/projects");
+  revalidatePath("/admin/vercel-accounts");
+  return { ok: true, message: `Updated Vercel account for ${project.name}.` };
 }
